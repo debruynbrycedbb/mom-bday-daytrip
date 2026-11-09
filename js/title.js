@@ -1,5 +1,5 @@
 // Title screen backdrop: a Tuscan morning with Lucca's towers on the horizon.
-import { bayer, disc, mulberry32, hash2 } from './pixel.js?v=1';
+import { bayer, disc, mulberry32, hash2 } from './pixel.js?v=2';
 
 export function createTitle(canvas) {
   const ctx = canvas.getContext('2d');
@@ -7,6 +7,7 @@ export function createTitle(canvas) {
 
   function build(vw, vh, scale) {
     w = Math.ceil(vw / scale); h = Math.ceil(vh / scale);
+    if (!w || !h) return;
     canvas.width = w; canvas.height = h;
     canvas.style.width = `${w * scale}px`;
     canvas.style.height = `${h * scale}px`;
@@ -80,7 +81,7 @@ export function createTitle(canvas) {
   }
 
   function frame(t) {
-    if (!bg) return;
+    if (!bg || !w || !h) return;
     ctx.drawImage(bg, 0, 0);
     for (const c of clouds) {
       const cw = c.size * 3;

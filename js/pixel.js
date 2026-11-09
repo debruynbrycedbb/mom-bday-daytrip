@@ -31,9 +31,15 @@ export function vnoise(x, y, s, seed = 0) {
 const B4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 export const bayer = (x, y) => (B4[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
 
+const hexCache = new Map();
 export function hex(c) {
-  const n = parseInt(c.slice(1), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  let v = hexCache.get(c);
+  if (!v) {
+    const n = parseInt(c.slice(1), 16);
+    v = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    hexCache.set(c, v);
+  }
+  return v;
 }
 
 export function shade(rgb, f) {

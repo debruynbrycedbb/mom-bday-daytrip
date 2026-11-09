@@ -97,6 +97,15 @@ export function splash() {
   tone(330, t + 0.05, 0.25, { type: 'triangle', vol: 0.2, slide: 660 });
 }
 
+// A small dog's "woof": a quick falling square tone over a puff of noise
+export function bark() {
+  if (!ready()) return;
+  const t = ac.currentTime;
+  tone(520, t, 0.09, { vol: 0.32, slide: 300 });
+  noise(t, 0.08, { vol: 0.25, freq: 900 });
+  tone(470, t + 0.13, 0.08, { vol: 0.26, slide: 280 });
+}
+
 export function engineOn(v) {
   if (v && on && ensure() && !engine) {
     const o = ac.createOscillator();

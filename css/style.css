@@ -170,6 +170,30 @@ canvas {
   will-change: transform;
 }
 
+/* speech bubble over dog 2 during the lizard chase */
+.bubble {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 0.2rem 0.45rem 0.3rem;
+  font: 700 0.95rem/1 var(--font);
+  color: var(--ink);
+  background: #fffaf0;
+  white-space: nowrap;
+  box-shadow: 0 -2px 0 0 var(--ink), 0 2px 0 0 var(--ink), -2px 0 0 0 var(--ink), 2px 0 0 0 var(--ink);
+  will-change: transform;
+}
+.bubble::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - 4px);
+  bottom: -8px;
+  width: 8px;
+  height: 6px;
+  background: linear-gradient(var(--ink) 0 2px, #fffaf0 2px 4px, var(--ink) 4px) left / 4px 100% no-repeat,
+              linear-gradient(var(--ink) 0 2px, transparent 2px) right / 4px 100% no-repeat;
+}
+
 /* ------------------------------------------------------------ HUD */
 
 .top-hud {

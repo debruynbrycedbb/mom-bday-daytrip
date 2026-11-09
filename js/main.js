@@ -1,11 +1,12 @@
-// Mom's birthday day trip: the map, the travelling family, the HUD and the stop cards.
-import { buildWorld, W, H, LABELS, POOL_RECT } from './world.js?v=1';
-import { drawCar, drawSign, drawArrow } from './sprites.js?v=1';
-import { STOPS } from './stops.js?v=1';
-import { createScene } from './scenes.js?v=1';
-import { createTitle } from './title.js?v=1';
-import * as sound from './sound.js?v=1';
-import { hash2, pline } from './pixel.js?v=1';
+// Mom's birthday day trip: the map, the travelling family, the park chase,
+// the HUD and the stop cards.
+import { buildWorld, W, H, LABELS, POOL_RECT, HILL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=2';
+import { drawCar, drawSign, drawArrow, drawLizard } from './sprites.js?v=2';
+import { STOPS } from './stops.js?v=2';
+import { createScene } from './scenes.js?v=2';
+import { createTitle } from './title.js?v=2';
+import * as sound from './sound.js?v=2';
+import { hash2, pline } from './pixel.js?v=2';
 
 const $ = (s) => document.querySelector(s);
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -20,7 +21,15 @@ const el = {
 };
 
 const assets = {};
-const IMAGES = ['mom-map', 'dad-map', 'dog1-map', 'dog2-map', 'scene-street', 'scene-square', 'scene-drive', 'scene-baths'];
+const IMAGES = [
+  'mom-map', 'dad-map', 'dog1-map', 'dog2-map', 'scene-street', 'scene-square', 'scene-drive', 'scene-baths',
+  'tree1-l', 'tree2-l', 'tree3-l', 'tree1-m', 'tree2-m', 'tree3-m', 'olive1', 'olive2', 'olive3',
+];
+
+// Speeds in map pixels per second (1 m ≈ 20px): a brisk stroll, and a country-road drive
+const WALK = 72;
+const DRIVE = 320;
+const DOG_RUN = 170;
 
 const mctx = el.map.getContext('2d');
 const title = createTitle(el.titleBg);
@@ -29,12 +38,14 @@ let scale = 2, viewW = 0, viewH = 0;
 const cam = { x: 0, y: 0 };
 const state = {
   started: false, d: 0, targetD: 0, travelling: false, reached: 0, boost: 1,
-  manual: null, cardOpen: 0, stepAcc: 0, steps: 0, mode: 'walk', facing: { dog1: 1, dog2: -1 },
+  manual: null, cardOpen: 0, stepAcc: 0, steps: 0, mode: 'walk', carLeft: false,
+  facing: { dog1: 1, dog2: -1 }, chaseDone: false, event: null,
 };
 let scene = null;
 let t = 0;
 let last = performance.now();
 let stopBtns = [], labelEls = [];
+let bubble = null;
 const sparks = [];
 let nextBurst = 0;
 let lastFocus = null;
@@ -46,29 +57,31 @@ function loadImage(name) {
     const img = new Image();
     img.onload = () => resolve((assets[name] = img));
     img.onerror = () => reject(new Error(`Could not load ${name}`));
-    img.src = `assets/img/${name}.png`;
+    img.src = `assets/img/${name}.png?v=2`;
   });
 }
 
-function computeScale() {
-  const vw = window.innerWidth, vh = window.innerHeight;
-  let s = vw < 700 || vh < 640 ? 2 : 3;
-  if (vw / s > W) s = Math.ceil(vw / W);
-  return s;
+// Whole device pixels per map pixel keeps the pixel art crisp at any zoom
+function mapScale() {
+  const dpr = window.devicePixelRatio || 1;
+  const target = window.innerWidth < 700 || window.innerHeight < 640 ? 1.5 : 2;
+  const k = Math.max(1, Math.round(target * dpr));
+  return { k, css: k / dpr, dpr };
 }
 
 function resize() {
-  scale = computeScale();
-  viewW = Math.ceil(window.innerWidth / scale);
-  viewH = Math.ceil(window.innerHeight / scale);
+  const { k, css, dpr } = mapScale();
+  scale = css;
+  viewW = Math.ceil((window.innerWidth * dpr) / k);
+  viewH = Math.ceil((window.innerHeight * dpr) / k);
   el.map.width = viewW;
   el.map.height = viewH;
-  el.map.style.width = `${viewW * scale}px`;
-  el.map.style.height = `${viewH * scale}px`;
+  el.map.style.width = `${viewW * css}px`;
+  el.map.style.height = `${viewH * css}px`;
   mctx.imageSmoothingEnabled = false;
-  title.build(window.innerWidth, window.innerHeight, scale);
+  const titleScale = window.innerWidth < 700 || window.innerHeight < 640 ? 2 : 3;
+  title.build(window.innerWidth, window.innerHeight, titleScale);
   if (reduced) title.frame(0);
-  document.documentElement.style.setProperty('--map-scale', scale);
   if (world) snapCamera();
 }
 
@@ -89,6 +102,11 @@ function buildOverlay() {
     el.overlay.append(s);
     return s;
   });
+  bubble = document.createElement('span');
+  bubble.className = 'bubble';
+  bubble.setAttribute('aria-hidden', 'true');
+  bubble.hidden = true;
+  el.overlay.append(bubble);
   el.pips.innerHTML = STOPS.map((s, k) => `<li><span class="sr-only">Stop ${k + 1}: ${s.chip}</span></li>`).join('');
 }
 
@@ -136,11 +154,7 @@ function arrive() {
 
 function replay() {
   closeCard(false);
-  state.d = 0;
-  state.reached = 0;
-  state.travelling = false;
-  state.mode = 'walk';
-  state.manual = null;
+  Object.assign(state, { d: 0, reached: 0, travelling: false, mode: 'walk', manual: null, chaseDone: false, event: null });
   sparks.length = 0;
   updateHud();
   snapCamera();
@@ -174,7 +188,11 @@ function updateHud() {
     b.setAttribute('aria-label', `Stop ${n}: ${STOPS[k].chip} (${what})`);
   });
   el.go.disabled = false;
-  if (state.travelling) {
+  if (state.event) {
+    el.go.textContent = 'Woof!';
+    el.go.disabled = true;
+    setStatus('[Dog 2’s name] has spotted a lizard!');
+  } else if (state.travelling) {
     el.go.textContent = state.boost > 1 ? 'Hurrying…' : 'Speed up';
     el.go.disabled = state.boost > 1;
     setStatus(state.mode === 'drive' ? 'Driving…' : 'Walking…');
@@ -236,35 +254,165 @@ function trapFocus(e) {
   else if (!e.shiftKey && document.activeElement === lastItem) { e.preventDefault(); first.focus(); }
 }
 
+// ---------------------------------------------------------------- the party
+
+// Where everyone stands for a given distance along the path
+function formation(d) {
+  const lo = d >= world.parkD ? world.parkD : -Infinity;
+  const hi = d <= world.boardD ? world.boardD : Infinity;
+  const clampD = (v) => Math.max(lo, Math.min(hi, v));
+  const pos = (dd, off) => {
+    const c = clampD(dd);
+    const p = world.at(c);
+    const tt = world.tangent(c);
+    return { x: p.x - tt.y * off, y: p.y + tt.x * off, tx: tt.x };
+  };
+  return { mom: pos(d - 6, 13), dad: pos(d - 6, -13), dog1: pos(d + 18, 15), dog2: pos(d + 18, -15) };
+}
+
+// ---------------------------------------------------------------- the lizard chase
+// Timeline (seconds): 0 lizard pops out · 0.6–5.6 the chase · 5.6–6.5 up the
+// tree · 6.5–7.9 barking at the tree · then dog 2 trots back and the walk resumes.
+const EV = { chase: 0.6, chaseLen: 5, climb: 5.6, tree: 6.5, back: 7.9 };
+const WOOFS = [0.8, 1.9, 3.0, 4.1, 5.2, 6.6, 7.3];
+const chasePath = (() => {
+  const p = CHASE.path;
+  const cum = [0];
+  for (let i = 1; i < p.length; i++) cum[i] = cum[i - 1] + Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y);
+  return { p, cum, total: cum[cum.length - 1] };
+})();
+function alongChase(s) {
+  const { p, cum } = chasePath;
+  let i = 1;
+  while (i < cum.length - 1 && cum[i] < s) i++;
+  const f = Math.max(0, Math.min(1, (s - cum[i - 1]) / (cum[i] - cum[i - 1] || 1)));
+  return { x: p[i - 1].x + (p[i].x - p[i - 1].x) * f, y: p[i - 1].y + (p[i].y - p[i - 1].y) * f, dx: p[i].x - p[i - 1].x };
+}
+
+function startChase() {
+  const f = formation(state.d);
+  state.event = {
+    t: 0, dog: { x: f.dog2.x, y: f.dog2.y, face: state.facing.dog2 }, liz: { ...CHASE.spawn, face: 1, climbing: false, hidden: false },
+    woof: 0, leaves: [],
+  };
+  sound.blip();
+  updateHud();
+}
+
+function updateChase(dt) {
+  const ev = state.event;
+  ev.t += dt;
+  const E = ev.t;
+  const tree = world.chaseTree;
+  const home = formation(state.d).dog2;
+  const dog = ev.dog, liz = ev.liz;
+
+  // the lizard
+  if (E < EV.chase) {
+    Object.assign(liz, CHASE.spawn);
+  } else if (E < EV.climb) {
+    const u = (E - EV.chase) / EV.chaseLen;
+    const N = 7, k = Math.floor(u * N), ph = u * N - k;
+    const prog = Math.min(1, (k + Math.min(1, ph / 0.72)) / N); // dash, freeze, dash...
+    const p = alongChase(prog * chasePath.total);
+    if (Math.abs(p.dx) > 1) liz.face = p.dx < 0 ? -1 : 1;
+    liz.x = p.x; liz.y = p.y;
+  } else if (E < EV.tree) {
+    const u = (E - EV.climb) / (EV.tree - EV.climb);
+    liz.climbing = true;
+    liz.x = tree.x;
+    liz.y = tree.y - 6 - u * 60;
+  } else {
+    liz.hidden = true;
+  }
+
+  // dog 2
+  let target;
+  if (E < EV.chase) target = null;
+  else if (E < EV.climb) target = liz;
+  else if (E < EV.back) target = { x: tree.x - 26, y: tree.y + 10 };
+  else target = home;
+  if (target) {
+    const dx = target.x - dog.x, dy = target.y - dog.y, dist = Math.hypot(dx, dy);
+    const speed = E >= EV.back ? 120 : DOG_RUN;
+    const stopAt = target === liz ? 14 : 1;
+    if (dist > stopAt) {
+      const step = Math.min(dist - stopAt, speed * dt);
+      dog.x += (dx / dist) * step;
+      dog.y += (dy / dist) * step;
+      if (Math.abs(dx) > 2) dog.face = dx < 0 ? -1 : 1;
+      dog.moving = true;
+    } else dog.moving = false;
+    if (E >= EV.back && dist < 2) {
+      state.event = null;
+      state.chaseDone = true;
+      state.facing.dog2 = dog.face;
+      tree.shake = 0;
+      updateHud();
+      return;
+    }
+  }
+
+  // barks
+  while (ev.woof < WOOFS.length && E >= WOOFS[ev.woof]) { ev.woof++; sound.bark(); }
+
+  // the tree rustles as the lizard disappears into its leaves
+  tree.shake = E > EV.tree - 0.1 && E < EV.tree + 0.6 ? Math.round(Math.sin(E * 60)) : 0;
+  if (E > EV.tree - 0.1 && E < EV.tree + 0.4 && Math.random() < 0.5) {
+    ev.leaves.push({ x: tree.x - 30 + Math.random() * 60, y: tree.y - 70 - Math.random() * 30, vy: 20 + Math.random() * 20, age: 0 });
+  }
+  for (const l of ev.leaves) { l.age += dt; l.y += l.vy * dt; l.x += Math.sin(l.age * 6) * 12 * dt; }
+  ev.leaves = ev.leaves.filter((l) => l.age < 2);
+}
+
+function bubbleText() {
+  const ev = state.event;
+  if (!ev) return null;
+  if (ev.t < 0.7) return '!';
+  for (const w of WOOFS) if (ev.t >= w && ev.t < w + 0.5) return 'Woof!';
+  return null;
+}
+
 // ---------------------------------------------------------------- update
 
 function update(dt) {
-  if (state.travelling) {
+  if (state.event) updateChase(dt);
+  else if (state.travelling) {
     const mode = world.modeAt(state.d + 0.5);
     if (mode !== state.mode) {
       state.mode = mode;
       sound.engineOn(mode === 'drive');
       updateHud();
     }
-    const base = mode === 'drive' ? 92 : 34;
+    const base = mode === 'drive' ? DRIVE : WALK;
     const remain = state.targetD - state.d;
-    const ease = Math.max(0.35, Math.min(1, remain / 22));
+    const ease = Math.max(0.3, Math.min(1, remain / (mode === 'drive' ? 160 : 60)));
     const v = base * ease * state.boost * (reduced ? 3 : 1);
+    const before = state.d;
     state.d = Math.min(state.targetD, state.d + v * dt);
-    if (mode === 'walk') {
-      state.stepAcc += v * dt;
-      if (state.stepAcc > 9) { state.stepAcc = 0; state.steps++; sound.step(state.steps); }
+    if (!state.chaseDone && before < world.chaseD && state.d >= world.chaseD) {
+      state.d = world.chaseD;
+      startChase();
     }
-    if (state.d >= state.targetD) arrive();
+    if (mode === 'walk') {
+      state.stepAcc += state.d - before;
+      if (state.stepAcc > 18) { state.stepAcc = 0; state.steps++; sound.step(state.steps); }
+    }
+    if (!state.event && state.d >= state.targetD) arrive();
   }
 
-  // camera
+  // camera: follow the family (and the chase)
   const f = world.at(state.d);
-  let tx = f.x - viewW / 2;
-  let ty = f.y - viewH * 0.46;
-  if (state.cardOpen && window.innerWidth >= 900) {
-    tx += el.card.getBoundingClientRect().width / 2 / scale;
+  let fx = f.x, fy = f.y;
+  if (state.event) {
+    // lean toward the chase; on narrow phones follow the dog almost entirely
+    const w = viewW < 420 ? 0.85 : 0.55;
+    fx = f.x * (1 - w) + state.event.dog.x * w;
+    fy = f.y * (1 - w) + state.event.dog.y * w;
   }
+  let tx = fx - viewW / 2;
+  let ty = fy - viewH * 0.5;
+  if (state.cardOpen && window.innerWidth >= 900) tx += el.card.getBoundingClientRect().width / 2 / scale;
   if (state.manual) { tx = state.manual.x; ty = state.manual.y; }
   [tx, ty] = clampCam(tx, ty);
   if (state.manual) { state.manual.x = tx; state.manual.y = ty; }
@@ -275,14 +423,13 @@ function update(dt) {
 
 function clampCam(x, y) {
   const cx = viewW >= W ? (W - viewW) / 2 : Math.max(0, Math.min(W - viewW, x));
-  const top = world ? world.top : 0;
-  const cy = viewH >= H + top ? (H - top - viewH) / 2 : Math.max(-top, Math.min(H - viewH, y));
+  const cy = viewH >= H ? (H - viewH) / 2 : Math.max(0, Math.min(H - viewH, y));
   return [cx, cy];
 }
 
 function snapCamera() {
   const f = world.at(state.d);
-  [cam.x, cam.y] = clampCam(f.x - viewW / 2, f.y - viewH * 0.46);
+  [cam.x, cam.y] = clampCam(f.x - viewW / 2, f.y - viewH * 0.5);
 }
 
 // ---------------------------------------------------------------- drawing
@@ -290,32 +437,43 @@ function snapCamera() {
 function drawMap() {
   const cx = Math.round(cam.x), cy = Math.round(cam.y);
   const g = mctx;
-  g.fillStyle = '#4b7836';
-  g.fillRect(0, 0, viewW, viewH);
-  g.drawImage(world.canvas, -cx, -cy - world.top);
+  const missing = world.drawGround(g, cx, cy, viewW, viewH);
   g.save();
   g.translate(-cx, -cy);
   const inView = (x, y, m = 24) => x > cx - m && x < cx + viewW + m && y > cy - m && y < cy + viewH + m;
 
   // river sparkles
-  const rp = world.riverPx;
+  const rv = world.river;
   g.fillStyle = '#d4ebf8';
-  for (let k = 0; k < 260; k++) {
-    const ph = t * 1.4 + k * 0.37;
+  for (let k = 0; k < 420; k++) {
+    const ph = t * 1.2 + k * 0.37;
     const slot = Math.floor(ph);
-    if (!reduced && ph - slot > 0.45) continue;
-    const i = rp[Math.floor(hash2(k, slot) * rp.length)];
-    const x = i % W, y = (i / W) | 0;
-    if (inView(x, y, 2)) g.fillRect(x, y, 2, 1);
+    if (!reduced && ph - slot > 0.5) continue;
+    const i = 1 + Math.floor(hash2(k, slot) * (rv.length - 2));
+    const p = rv[i], q = rv[i + 1];
+    const nx = -(q.y - p.y), ny = q.x - p.x, nl = Math.hypot(nx, ny) || 1;
+    const off = (hash2(slot, k) - 0.5) * 110;
+    const x = p.x + (nx / nl) * off, y = p.y + (ny / nl) * off;
+    if (inView(x, y, 4)) g.fillRect(Math.round(x), Math.round(y), 4, 1);
   }
 
-  // steam off the spa pool
-  if (inView(POOL_RECT.x, POOL_RECT.y, 40)) {
-    for (let k = 0; k < 9; k++) {
-      const life = (t * 0.45 + k / 9) % 1;
-      const x = POOL_RECT.x + 3 + hash2(k, 3) * (POOL_RECT.w - 6) + Math.sin(t * 2 + k) * 1.5;
-      const y = POOL_RECT.y + POOL_RECT.h - 5 - life * 24;
-      g.fillStyle = `rgba(255,255,255,${0.5 * (1 - life)})`;
+  // steam off the spa pool; spray from the park fountain
+  if (inView(POOL_RECT.x + 90, POOL_RECT.y + 50, 200)) {
+    for (let k = 0; k < 18; k++) {
+      const life = (t * 0.35 + k / 18) % 1;
+      const x = POOL_RECT.x + 8 + hash2(k, 3) * (POOL_RECT.w - 16) + Math.sin(t * 1.5 + k) * 4;
+      const y = POOL_RECT.y + POOL_RECT.h - 10 - life * 70;
+      g.fillStyle = `rgba(255,255,255,${0.42 * (1 - life)})`;
+      g.fillRect(Math.round(x), Math.round(y), 4 + Math.floor(life * 4), 4 + Math.floor(life * 4));
+    }
+  }
+  if (inView(FOUNTAIN_SPOT.x, FOUNTAIN_SPOT.y, 80)) {
+    g.fillStyle = '#cfeaf5';
+    for (let k = 0; k < 14; k++) {
+      const life = (t * 1.3 + k / 14) % 1;
+      const side = k % 2 ? 1 : -1;
+      const x = FOUNTAIN_SPOT.x + side * life * (10 + (k % 3) * 4);
+      const y = FOUNTAIN_SPOT.y - 42 - Math.sin(life * Math.PI) * 10 + life * 28;
       g.fillRect(Math.round(x), Math.round(y), 2, 2);
     }
   }
@@ -323,137 +481,163 @@ function drawMap() {
   // the winding path: gold where we've been, marching dashes to the next stop
   const pts = world.pts;
   const nextD = state.reached < LAST ? world.stops[state.reached + 1].d : -1;
-  const march = reduced ? 0 : Math.floor(t * 10);
-  let style = '';
-  for (let i = 0; i < pts.length; i++) {
+  const march = reduced ? 0 : Math.floor(t * 30);
+  for (let i = 0; i < pts.length; i += 2) {
     const p = pts[i];
     if (!inView(p.x, p.y, 4)) continue;
-    let col = null;
-    if (i <= state.d) { if (i % 7 < 2) col = '#f3c64b'; }
-    else if (i <= nextD) { if ((((i - march) % 8) + 8) % 8 < 3) col = '#fff4dc'; }
-    else if (i % 9 < 2) col = 'rgba(255,244,220,0.55)';
+    let col = null, sz = 4;
+    if (i <= state.d) { if (i % 18 < 2) col = '#f3c64b'; }
+    else if (i <= nextD) { if ((((i - march) % 20) + 20) % 20 < 6) col = '#fff4dc'; }
+    else if (i % 22 < 2) { col = 'rgba(255,244,220,0.55)'; sz = 3; }
     if (!col) continue;
-    if (col !== style) { g.fillStyle = col; style = col; }
-    g.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 1, 2, 2);
+    g.fillStyle = col;
+    g.fillRect(Math.round(p.x) - 2, Math.round(p.y) - 2, sz, sz);
   }
 
-  // things that stand up, sorted by y
+  // everything that stands up, in depth order
   const things = [];
+  for (const s of world.visibleSprites(cx, cy, viewW, viewH)) {
+    things.push({ y: s.sortY, draw: () => {
+      if (s.img) g.drawImage(s.img, Math.round(s.x - s.w / 2 + (s.shake || 0)), Math.round(s.y - s.h));
+      else g.drawImage(s.canvas, s.x, s.y);
+    } });
+  }
   world.stops.forEach((s, n) => {
-    if (n === 0) return;
+    if (n === 0 || !inView(s.sx, s.sy, 80)) return;
     const st = n <= state.reached ? 'done' : n === state.reached + 1 ? 'next' : 'locked';
     things.push({ y: s.sy, draw: () => {
       drawSign(g, s.sx, s.sy, st, t);
-      if (st === 'next' && !state.travelling) drawArrow(g, s.sx, s.sy - 23, reduced ? 0 : t);
+      if (st === 'next' && !state.travelling) drawArrow(g, s.sx, s.sy - 46, reduced ? 0 : t);
     } });
   });
   partyThings(things);
   things.sort((a, b) => a.y - b.y).forEach((th) => th.draw());
 
-  // swallows overhead
-  for (let k = 0; k < 3; k++) {
-    const x = ((t * (16 + k * 5) + k * 170) % (W + 80)) - 40;
-    const y = cy + 16 + k * 22 + Math.sin(t * 2 + k) * 3;
-    const fl = Math.floor(t * 6 + k) % 2;
-    g.fillStyle = '#2a1a14';
-    if (fl) { g.fillRect(x | 0, y | 0, 2, 1); g.fillRect((x | 0) + 3, y | 0, 2, 1); g.fillRect((x | 0) + 2, (y | 0) + 1, 1, 1); }
-    else { g.fillRect(x | 0, (y | 0) - 1, 1, 1); g.fillRect((x | 0) + 1, y | 0, 1, 1); g.fillRect((x | 0) + 2, (y | 0) + 1, 1, 1); g.fillRect((x | 0) + 3, y | 0, 1, 1); g.fillRect((x | 0) + 4, (y | 0) - 1, 1, 1); }
+  // falling leaves from the rustling tree
+  if (state.event) {
+    g.fillStyle = '#7fb23a';
+    for (const l of state.event.leaves) g.fillRect(Math.round(l.x), Math.round(l.y), 2, 2);
   }
 
-  // fireworks over the birthday hill once we arrive
-  if (state.reached === LAST && !reduced) drawFireworks(g);
+  // swallows overhead
+  for (let k = 0; k < 4; k++) {
+    const x = cx + ((t * (26 + k * 6) + k * 260) % (viewW + 120)) - 60;
+    const y = cy + 24 + k * 30 + Math.sin(t * 2 + k) * 4;
+    const fl = Math.floor(t * 6 + k) % 2;
+    g.fillStyle = '#2a1a14';
+    const X = x | 0, Y = y | 0;
+    if (fl) { g.fillRect(X, Y, 3, 1); g.fillRect(X + 4, Y, 3, 1); g.fillRect(X + 3, Y + 1, 1, 1); }
+    else { g.fillRect(X, Y - 2, 1, 1); g.fillRect(X + 1, Y - 1, 1, 1); g.fillRect(X + 2, Y, 1, 1); g.fillRect(X + 3, Y + 1, 1, 1); g.fillRect(X + 4, Y, 1, 1); g.fillRect(X + 5, Y - 1, 1, 1); g.fillRect(X + 6, Y - 2, 1, 1); }
+  }
 
+  if (state.reached === LAST && !reduced) drawFireworks(g, cx, cy);
   g.restore();
+
+  // spare time this frame: paint a tile ahead of the family
+  if (!missing) {
+    const ahead = world.at(state.d + (state.travelling ? (state.mode === 'drive' ? 900 : 360) : 200));
+    world.prefetch(ahead.x, ahead.y) || world.prefetch(cam.x + viewW / 2, cam.y + viewH / 2, 700);
+  }
 }
 
 function partyThings(things) {
   const g = mctx;
   const d = state.d;
   const mode = world.modeAt(d);
+  const carAt = (x, y, left, bump) => () => drawCar(g, x, y, left, bump, assets);
 
   if (mode === 'drive') {
     const p = world.at(d);
     const tg = world.tangent(d);
+    if (tg.x < -0.25) state.carLeft = true; else if (tg.x > 0.25) state.carLeft = false;
     things.push({ y: p.y, draw: () => {
       if (state.travelling && !reduced) {
         for (let k = 0; k < 3; k++) {
           const age = (t * 2.2 + k / 3) % 1;
-          const back = 32 + age * 10;
+          const back = 46 + age * 16;
           g.fillStyle = `rgba(235,230,220,${0.55 * (1 - age)})`;
-          g.fillRect(Math.round(p.x - tg.x * back), Math.round(p.y - 3 - tg.y * back - age * 3), 2, 2);
+          g.fillRect(Math.round(p.x - tg.x * back), Math.round(p.y - 8 - tg.y * back - age * 6), 4, 4);
         }
       }
-      const bump = state.travelling && Math.floor(t * 9) % 3 === 0 ? 1 : 0;
-      drawCar(g, p.x, p.y, tg.x < 0, bump, assets);
+      carAt(p.x, p.y, state.carLeft, state.travelling && Math.floor(t * 9) % 3 === 0 ? 1 : 0)();
     } });
     return;
   }
 
   // the parked car
-  if (d <= world.boardD) things.push({ y: world.boardPt.y + 6, draw: () => drawCar(g, world.boardPt.x + 4, world.boardPt.y + 6, false, 0, {}) });
-  else if (d >= world.parkD) things.push({ y: world.parkPt.y - 4, draw: () => drawCar(g, world.parkPt.x + 6, world.parkPt.y - 4, true, 0, {}) });
+  if (d <= world.boardD) things.push({ y: world.boardPt.y, draw: () => drawCar(g, world.boardPt.x, world.boardPt.y, false, 0, {}) });
+  else if (d >= world.parkD) things.push({ y: world.parkPt.y, draw: () => drawCar(g, world.parkPt.x, world.parkPt.y, true, 0, {}) });
 
-  const lo = d >= world.parkD ? world.parkD : -Infinity;
-  const hi = d <= world.boardD ? world.boardD : Infinity;
-  const clampD = (v) => Math.max(lo, Math.min(hi, v));
-  const pos = (dd, off) => {
-    const c = clampD(dd);
-    const p = world.at(c);
-    const tt = world.tangent(c);
-    return { x: p.x - tt.y * off, y: p.y + tt.x * off, tx: tt.x };
-  };
-  const walking = state.travelling;
+  const f = formation(d);
+  const ev = state.event;
+  const { mom, dad, dog1 } = f;
+  const dog2 = ev ? ev.dog : f.dog2;
+  if (!ev) {
+    if (dog1.tx > 0.2) state.facing.dog1 = 1; else if (dog1.tx < -0.2) state.facing.dog1 = -1;
+    if (f.dog2.tx > 0.2) state.facing.dog2 = 1; else if (f.dog2.tx < -0.2) state.facing.dog2 = -1;
+  } else {
+    state.facing.dog1 = dog2.x < dog1.x ? -1 : 1; // dog 1 watches the chase
+  }
+  const face2 = ev ? ev.dog.face : state.facing.dog2;
+  const walking = state.travelling && !ev;
   const bobAt = (ph, dog) => {
     if (reduced) return 0;
-    if (walking) return Math.floor(state.d / 4 + ph * 2) % 2;
+    if (walking) return Math.floor(state.d / 9 + ph * 2) % 2;
     return dog && Math.floor(t * 2 + ph * 3) % 5 === 0 ? 1 : 0;
   };
-
-  const mom = pos(d - 4, 11), dad = pos(d - 4, -11);
-  const dog1 = pos(d + 11, 14), dog2 = pos(d + 11, -13);
-  if (dog1.tx > 0.2) state.facing.dog1 = 1; else if (dog1.tx < -0.2) state.facing.dog1 = -1;
-  if (dog2.tx > 0.2) state.facing.dog2 = 1; else if (dog2.tx < -0.2) state.facing.dog2 = -1;
+  let dog2Bob = bobAt(0.75, true);
+  if (ev) dog2Bob = ev.t < EV.chase ? Math.floor(ev.t * 8) % 2 * 2 : ev.dog.moving ? Math.floor(ev.t * 12) % 2 : Math.floor(ev.t * 6) % 2;
 
   const sprite = (img, p, bob, flip) => () => {
     const x = Math.round(p.x - img.width / 2), y = Math.round(p.y - img.height + 1 - bob);
-    g.fillStyle = 'rgba(25,20,15,0.32)';
+    g.fillStyle = 'rgba(25,20,15,0.3)';
     g.fillRect(x + 2, Math.round(p.y), img.width - 4, 2);
-    if (flip) {
-      g.save(); g.translate(x + img.width, y); g.scale(-1, 1); g.drawImage(img, 0, 0); g.restore();
-    } else g.drawImage(img, x, y);
+    if (flip) { g.save(); g.translate(x + img.width, y); g.scale(-1, 1); g.drawImage(img, 0, 0); g.restore(); }
+    else g.drawImage(img, x, y);
   };
 
-  // leads, drawn first so the sprites sit on top of them
+  // leads first, so the sprites sit on top of them
   things.push({ y: -1e9, draw: () => {
-    const d1 = state.facing.dog1, d2 = state.facing.dog2;
-    pline(g, mom.x - 8, mom.y - 12, dog1.x + d1 * 5, dog1.y - 10, '#c8302c');
-    pline(g, dad.x + 9, dad.y - 12, dog2.x + d2 * 4, dog2.y - 10, '#2e8f7a');
+    pline(g, mom.x - 9, mom.y - 13, dog1.x + state.facing.dog1 * 6, dog1.y - 9, '#c8302c');
+    if (ev) pline(g, dad.x + 12, dad.y - 13, dad.x + 14, dad.y - 3, '#2e8f7a'); // dog 2 slipped its lead
+    else pline(g, dad.x + 12, dad.y - 13, dog2.x + face2 * 5, dog2.y - 9, '#2e8f7a');
   } });
   things.push({ y: mom.y, draw: sprite(assets['mom-map'], mom, bobAt(0), false) });
   things.push({ y: dad.y, draw: sprite(assets['dad-map'], dad, bobAt(0.5), false) });
   // dog 1 faces right in the art, dog 2 faces left
   things.push({ y: dog1.y, draw: sprite(assets['dog1-map'], dog1, bobAt(0.25, true), state.facing.dog1 < 0) });
-  things.push({ y: dog2.y, draw: sprite(assets['dog2-map'], dog2, bobAt(0.75, true), state.facing.dog2 > 0) });
+  things.push({ y: dog2.y, draw: sprite(assets['dog2-map'], dog2, dog2Bob, face2 > 0) });
+
+  // the lizard
+  if (ev && !ev.liz.hidden) {
+    const liz = ev.liz;
+    const tree = world.chaseTree;
+    const peek = ev.t < EV.chase ? Math.min(1, ev.t / 0.3) : 1;
+    things.push({ y: liz.climbing ? tree.sortY + 1 : liz.y, draw: () => {
+      if (peek < 1 && Math.floor(ev.t * 10) % 2) return; // blinking in the flower bed
+      drawLizard(g, liz.x, liz.y, liz.climbing || (ev.t > EV.chase && ev.t < EV.climb) ? t : 0, liz.face < 0, liz.climbing);
+    } });
+  }
 }
 
-function drawFireworks(g) {
+function drawFireworks(g, cx, cy) {
   nextBurst -= 1 / 60;
   if (nextBurst <= 0) {
-    nextBurst = 0.9;
+    nextBurst = 0.8;
     const cols = ['#ffd34d', '#ff7a8a', '#8fe3ff', '#ffffff', '#b4ff8a'];
-    const x = 130 + Math.random() * 120, y = 1196 + Math.random() * 40;
+    const x = HILL_SPOT.x - 140 + Math.random() * 280, y = HILL_SPOT.y - 260 + Math.random() * 90;
     const c = cols[Math.floor(Math.random() * cols.length)];
-    for (let k = 0; k < 18; k++) {
-      const a = (k / 18) * Math.PI * 2;
-      sparks.push({ x, y, vx: Math.cos(a) * 26, vy: Math.sin(a) * 26, age: 0, c });
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      sparks.push({ x, y, vx: Math.cos(a) * 60, vy: Math.sin(a) * 60, age: 0, c });
     }
   }
   for (const p of sparks) {
     p.age += 1 / 60;
-    p.vy += 0.4;
+    p.vy += 1;
     p.x += p.vx / 60; p.y += p.vy / 60;
     g.fillStyle = p.c;
-    g.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
+    g.fillRect(Math.round(p.x), Math.round(p.y), 2, 2);
   }
   for (let i = sparks.length - 1; i >= 0; i--) if (sparks[i].age > 1.3) sparks.splice(i, 1);
 }
@@ -462,25 +646,37 @@ let lastCam = '';
 function placeOverlay() {
   const cx = Math.round(cam.x), cy = Math.round(cam.y);
   const key = `${cx},${cy},${scale}`;
-  if (key === lastCam) return;
-  lastCam = key;
-  world.stops.forEach((s, n) => {
-    if (n === 0) return;
-    // the chip sits beside its signpost, on the side away from the path
-    const right = s.sx >= s.x;
-    const x = (s.sx - cx + (right ? 10 : -10)) * scale, y = (s.sy - cy - 16) * scale;
-    stopBtns[n - 1].style.transform = `translate(${x}px, ${y}px) translate(${right ? 0 : -100}%, -50%)`;
-  });
-  LABELS.forEach((l, k) => {
-    const x = (l.x - cx) * scale, y = (l.y - cy) * scale;
-    labelEls[k].style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
-  });
+  if (key !== lastCam) {
+    lastCam = key;
+    world.stops.forEach((s, n) => {
+      if (n === 0) return;
+      // the chip sits beside its signpost, on the side away from the path
+      const right = s.sx >= s.x;
+      const x = (s.sx - cx + (right ? 18 : -18)) * scale, y = (s.sy - cy - 28) * scale;
+      stopBtns[n - 1].style.transform = `translate(${x}px, ${y}px) translate(${right ? 0 : -100}%, -50%)`;
+    });
+    LABELS.forEach((l, k) => {
+      const x = (l.x - cx) * scale, y = (l.y - cy) * scale;
+      labelEls[k].style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+    });
+  }
+  // the bark bubble follows dog 2
+  const text = bubbleText();
+  if (text) {
+    const dog = state.event.dog;
+    bubble.hidden = false;
+    if (bubble.textContent !== text) bubble.textContent = text;
+    bubble.style.transform = `translate(${(dog.x - cx) * scale}px, ${(dog.y - 22 - cy) * scale}px) translate(-50%, -100%)`;
+  } else if (!bubble.hidden) bubble.hidden = true;
 }
 
 // ---------------------------------------------------------------- loop
 
+let frozen = false; // ?debug: hold time still to inspect a moment
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  requestAnimationFrame(frame); // keep going even if a frame throws
+  // up to 0.1 s per frame, so the chase keeps real time on slower phones
+  const dt = frozen ? 0 : Math.min(0.1, (now - last) / 1000);
   last = now;
   t += dt;
   if (!el.title.hidden && !reduced) title.frame(t);
@@ -488,9 +684,10 @@ function frame(now) {
     update(dt);
     drawMap();
     placeOverlay();
+  } else if (world) {
+    world.prefetch(world.at(0).x, world.at(0).y, 700); // get the start ready behind the title
   }
   if (scene) scene.frame(t, dt);
-  requestAnimationFrame(frame);
 }
 
 // ---------------------------------------------------------------- input
@@ -508,11 +705,11 @@ function bindInput() {
     el.sound.setAttribute('aria-pressed', String(sound.isOn()));
     el.sound.querySelector('.label').textContent = sound.isOn() ? 'Sound on' : 'Sound off';
   };
-  // Browsers only allow audio after a tap, so a saved "on" waits for the first click
+  // Browsers only allow audio after a tap, so a saved "on" waits for the first one
   if (soundPref) {
     const arm = (e) => {
       window.removeEventListener('pointerdown', arm);
-      if (e.target.closest('#sound')) return; // the toggle handles itself
+      if (e.target.closest('#sound')) return;
       sound.setOn(true);
       showSound();
     };
@@ -578,10 +775,12 @@ async function init() {
     console.error(err);
     return;
   }
-  world = buildWorld();
+  world = buildWorld(assets);
   buildOverlay();
   updateHud();
   snapCamera();
+  // paint the opening view now so the map is ready when the title lifts
+  world.drawGround(mctx, Math.round(cam.x), Math.round(cam.y), viewW, viewH, 12);
   el.start.disabled = false;
   el.start.textContent = 'Start the day';
 
@@ -593,12 +792,31 @@ async function init() {
       jump(n) {
         closeCard(false);
         state.travelling = false;
+        state.event = null;
         state.reached = n;
         state.d = world.stops[n].d;
+        state.chaseDone = state.d > world.chaseD;
         state.mode = world.modeAt(state.d);
         updateHud();
         snapCamera();
         if (n > 0) openCard(n);
+      },
+      freeze(on = true) { frozen = on; },
+      // jump into the chase at a given moment (seconds), e.g. __trip.chase(6)
+      chase(at = 0) {
+        closeCard(false);
+        Object.assign(state, { reached: 2, d: world.chaseD, travelling: true, targetD: world.stops[3].d, chaseDone: false, mode: 'walk' });
+        startChase();
+        state.event.t = at;
+        state.event.woof = WOOFS.filter((w) => w < at).length;
+        snapCamera();
+      },
+      // stand just before the park chase and walk on
+      park() {
+        closeCard(false);
+        Object.assign(state, { reached: 2, d: world.chaseD - 120, chaseDone: false, event: null });
+        snapCamera();
+        travelTo(3);
       },
     };
   }
