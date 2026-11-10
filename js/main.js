@@ -1,13 +1,13 @@
 // Mom's birthday day trip: the map, the travelling family, the park chase,
 // the HUD and the stop cards.
-import { buildWorld, W, H, LABELS, POOL_RECT, HILL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=5';
-import { drawCar, drawSign, drawArrow, drawLizard } from './sprites.js?v=5';
-import { STOPS } from './stops.js?v=5';
-import { createScene } from './scenes.js?v=5';
-import { createTitle } from './title.js?v=5';
-import * as sound from './sound.js?v=5';
-import { hash2, pline } from './pixel.js?v=5';
-import { createCutscene, CUT_LENGTH } from './cutscene.js?v=5';
+import { buildWorld, W, H, LABELS, POOL_RECT, HILL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=6';
+import { drawCar, drawSign, drawArrow, drawLizard, makeFamily } from './sprites.js?v=6';
+import { STOPS } from './stops.js?v=6';
+import { createScene } from './scenes.js?v=6';
+import { createTitle } from './title.js?v=6';
+import * as sound from './sound.js?v=6';
+import { hash2, pline } from './pixel.js?v=6';
+import { createCutscene, CUT_LENGTH } from './cutscene.js?v=6';
 
 const $ = (s) => document.querySelector(s);
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -23,16 +23,17 @@ const el = {
 };
 
 const assets = {};
+let fam = null; // the family's map sprites, drawn in code (see sprites.js)
 const IMAGES = [
   'mom-map', 'dad-map', 'dog1-map', 'dog2-map', 'scene-street', 'scene-square', 'scene-baths',
   'cut-car', 'cut-front', 'cut-mom', 'cut-dad', 'cut-dog1', 'cut-dog2', 'cut-dog1-side', 'cut-dog2-side',
   'tree1-l', 'tree2-l', 'tree3-l', 'tree1-m', 'tree2-m', 'tree3-m', 'olive1', 'olive2', 'olive3',
 ];
 
-// Speeds in map pixels per second (1 m ≈ 20px): a brisk stroll, and a country-road drive
-const WALK = 72;
+// Speeds in map pixels per second (1 m ≈ 9px): a brisk stroll, and a country-road drive
+const WALK = 64;
 const DRIVE = 320;
-const DOG_RUN = 170;
+const DOG_RUN = 100;
 // The drive: 3 s on the road, the 7 s cutscene, then the last 3 s to the baths
 const DRIVE_BEFORE_CUT = 3;
 const DRIVE_AFTER_CUT = 850; // map pixels: about 3 s at driving speed, easing into the car park
@@ -66,7 +67,7 @@ function loadImage(name) {
     const img = new Image();
     img.onload = () => resolve((assets[name] = img));
     img.onerror = () => reject(new Error(`Could not load ${name}`));
-    img.src = `assets/img/${name}.png?v=5`;
+    img.src = `assets/img/${name}.png?v=6`;
   });
 }
 
@@ -280,7 +281,7 @@ function formation(d) {
     const tt = world.tangent(c);
     return { x: p.x - tt.y * off, y: p.y + tt.x * off, tx: tt.x };
   };
-  return { mom: pos(d - 6, 13), dad: pos(d - 6, -13), dog1: pos(d + 18, 15), dog2: pos(d + 18, -15) };
+  return { mom: pos(d - 3, 6), dad: pos(d - 3, -6), dog1: pos(d + 9, 8), dog2: pos(d + 9, -8) };
 }
 
 // ---------------------------------------------------------------- the lizard chase
@@ -334,7 +335,7 @@ function updateChase(dt) {
     const u = (E - EV.climb) / (EV.tree - EV.climb);
     liz.climbing = true;
     liz.x = tree.x;
-    liz.y = tree.y - 6 - u * 60;
+    liz.y = tree.y - 4 - u * 30;
   } else {
     liz.hidden = true;
   }
@@ -343,12 +344,12 @@ function updateChase(dt) {
   let target;
   if (E < EV.chase) target = null;
   else if (E < EV.climb) target = liz;
-  else if (E < EV.back) target = { x: tree.x - 26, y: tree.y + 10 };
+  else if (E < EV.back) target = { x: tree.x - 12, y: tree.y + 5 };
   else target = home;
   if (target) {
     const dx = target.x - dog.x, dy = target.y - dog.y, dist = Math.hypot(dx, dy);
-    const speed = E >= EV.back ? 120 : DOG_RUN;
-    const stopAt = target === liz ? 14 : 1;
+    const speed = E >= EV.back ? 60 : DOG_RUN;
+    const stopAt = target === liz ? 7 : 1;
     if (dist > stopAt) {
       const step = Math.min(dist - stopAt, speed * dt);
       dog.x += (dx / dist) * step;
@@ -372,7 +373,7 @@ function updateChase(dt) {
   // the tree rustles as the lizard disappears into its leaves
   tree.shake = E > EV.tree - 0.1 && E < EV.tree + 0.6 ? Math.round(Math.sin(E * 60)) : 0;
   if (E > EV.tree - 0.1 && E < EV.tree + 0.4 && Math.random() < 0.5) {
-    ev.leaves.push({ x: tree.x - 30 + Math.random() * 60, y: tree.y - 70 - Math.random() * 30, vy: 20 + Math.random() * 20, age: 0 });
+    ev.leaves.push({ x: tree.x - 16 + Math.random() * 32, y: tree.y - 36 - Math.random() * 16, vy: 10 + Math.random() * 10, age: 0 });
   }
   for (const l of ev.leaves) { l.age += dt; l.y += l.vy * dt; l.x += Math.sin(l.age * 6) * 12 * dt; }
   ev.leaves = ev.leaves.filter((l) => l.age < 2);
@@ -435,7 +436,7 @@ function update(dt) {
     }
     const base = mode === 'drive' ? DRIVE : WALK;
     const remain = state.targetD - state.d;
-    const ease = Math.max(0.3, Math.min(1, remain / (mode === 'drive' ? 160 : 60)));
+    const ease = Math.max(0.3, Math.min(1, remain / (mode === 'drive' ? 160 : 30)));
     const v = base * ease * state.boost * (reduced ? 3 : 1);
     const before = state.d;
     state.d = Math.min(state.targetD, state.d + v * dt);
@@ -449,7 +450,7 @@ function update(dt) {
     }
     if (mode === 'walk') {
       state.stepAcc += state.d - before;
-      if (state.stepAcc > 18) { state.stepAcc = 0; state.steps++; sound.step(state.steps); }
+      if (state.stepAcc > 8) { state.stepAcc = 0; state.steps++; sound.step(state.steps); }
     }
     if (!state.event && state.d >= state.targetD) arrive();
   }
@@ -505,7 +506,7 @@ function drawMap() {
     const i = 1 + Math.floor(hash2(k, slot) * (rv.length - 2));
     const p = rv[i], q = rv[i + 1];
     const nx = -(q.y - p.y), ny = q.x - p.x, nl = Math.hypot(nx, ny) || 1;
-    const off = (hash2(slot, k) - 0.5) * 110;
+    const off = (hash2(slot, k) - 0.5) * 60;
     const x = p.x + (nx / nl) * off, y = p.y + (ny / nl) * off;
     if (inView(x, y, 4)) g.fillRect(Math.round(x), Math.round(y), 4, 1);
   }
@@ -515,9 +516,9 @@ function drawMap() {
     for (let k = 0; k < 18; k++) {
       const life = (t * 0.35 + k / 18) % 1;
       const x = POOL_RECT.x + 8 + hash2(k, 3) * (POOL_RECT.w - 16) + Math.sin(t * 1.5 + k) * 4;
-      const y = POOL_RECT.y + POOL_RECT.h - 10 - life * 70;
+      const y = POOL_RECT.y + POOL_RECT.h - 6 - life * 34;
       g.fillStyle = `rgba(255,255,255,${0.42 * (1 - life)})`;
-      g.fillRect(Math.round(x), Math.round(y), 4 + Math.floor(life * 4), 4 + Math.floor(life * 4));
+      g.fillRect(Math.round(x), Math.round(y), 2 + Math.floor(life * 3), 2 + Math.floor(life * 3));
     }
   }
   if (inView(FOUNTAIN_SPOT.x, FOUNTAIN_SPOT.y, 80)) {
@@ -525,8 +526,8 @@ function drawMap() {
     for (let k = 0; k < 14; k++) {
       const life = (t * 1.3 + k / 14) % 1;
       const side = k % 2 ? 1 : -1;
-      const x = FOUNTAIN_SPOT.x + side * life * (10 + (k % 3) * 4);
-      const y = FOUNTAIN_SPOT.y - 42 - Math.sin(life * Math.PI) * 10 + life * 28;
+      const x = FOUNTAIN_SPOT.x + side * life * (5 + (k % 3) * 2);
+      const y = FOUNTAIN_SPOT.y - 20 - Math.sin(life * Math.PI) * 5 + life * 14;
       g.fillRect(Math.round(x), Math.round(y), 2, 2);
     }
   }
@@ -560,7 +561,7 @@ function drawMap() {
     const st = n <= state.reached ? 'done' : n === state.reached + 1 ? 'next' : 'locked';
     things.push({ y: s.sy, draw: () => {
       drawSign(g, s.sx, s.sy, st, t);
-      if (st === 'next' && !state.travelling) drawArrow(g, s.sx, s.sy - 46, reduced ? 0 : t);
+      if (st === 'next' && !state.travelling) drawArrow(g, s.sx, s.sy - 24, reduced ? 0 : t);
     } });
   });
   partyThings(things);
@@ -597,7 +598,7 @@ function partyThings(things) {
   const g = mctx;
   const d = state.d;
   const mode = world.modeAt(d);
-  const carAt = (x, y, left, bump) => () => drawCar(g, x, y, left, bump, assets);
+  const carAt = (x, y, left, bump) => () => drawCar(g, x, y, left, bump, fam);
 
   if (mode === 'drive') {
     const p = world.at(d);
@@ -607,9 +608,9 @@ function partyThings(things) {
       if (state.travelling && !reduced) {
         for (let k = 0; k < 3; k++) {
           const age = (t * 2.2 + k / 3) % 1;
-          const back = 46 + age * 16;
+          const back = 22 + age * 8;
           g.fillStyle = `rgba(235,230,220,${0.55 * (1 - age)})`;
-          g.fillRect(Math.round(p.x - tg.x * back), Math.round(p.y - 8 - tg.y * back - age * 6), 4, 4);
+          g.fillRect(Math.round(p.x - tg.x * back), Math.round(p.y - 4 - tg.y * back - age * 3), 2, 2);
         }
       }
       carAt(p.x, p.y, state.carLeft, state.travelling && Math.floor(t * 9) % 3 === 0 ? 1 : 0)();
@@ -618,8 +619,8 @@ function partyThings(things) {
   }
 
   // the parked car
-  if (d <= world.boardD) things.push({ y: world.boardPt.y, draw: () => drawCar(g, world.boardPt.x, world.boardPt.y, false, 0, {}) });
-  else if (d >= world.parkD) things.push({ y: world.parkPt.y, draw: () => drawCar(g, world.parkPt.x, world.parkPt.y, true, 0, {}) });
+  if (d <= world.boardD) things.push({ y: world.boardPt.y, draw: () => drawCar(g, world.boardPt.x, world.boardPt.y, false, 0, null) });
+  else if (d >= world.parkD) things.push({ y: world.parkPt.y, draw: () => drawCar(g, world.parkPt.x, world.parkPt.y, true, 0, null) });
 
   const f = formation(d);
   const ev = state.event;
@@ -633,33 +634,38 @@ function partyThings(things) {
   }
   const face2 = ev ? ev.dog.face : state.facing.dog2;
   const walking = state.travelling && !ev;
-  const bobAt = (ph, dog) => {
-    if (reduced) return 0;
-    if (walking) return Math.floor(state.d / 9 + ph * 2) % 2;
-    return dog && Math.floor(t * 2 + ph * 3) % 5 === 0 ? 1 : 0;
+  // walking: step through the frames as the family moves; standing: an
+  // occasional hop from the dogs
+  const stepOf = (ph, dog) => {
+    if (reduced || !walking) return 0;
+    return dog ? Math.floor(state.d / 3 + ph * 2) % 2 : [0, 1, 0, 2][Math.floor(state.d / 4 + ph * 2) % 4];
   };
-  let dog2Bob = bobAt(0.75, true);
-  if (ev) dog2Bob = ev.t < EV.chase ? Math.floor(ev.t * 8) % 2 * 2 : ev.dog.moving ? Math.floor(ev.t * 12) % 2 : Math.floor(ev.t * 6) % 2;
+  const hop = (ph) => (!reduced && !walking && Math.floor(t * 2 + ph * 3) % 5 === 0 ? 1 : 0);
+  let dog2Frame = stepOf(0.75, true), dog2Bob = hop(0.75);
+  if (ev) {
+    dog2Frame = ev.dog.moving ? Math.floor(ev.t * 12) % 2 : 0;
+    dog2Bob = ev.t < EV.chase ? Math.floor(ev.t * 8) % 2 : ev.dog.moving ? 0 : Math.floor(ev.t * 6) % 2;
+  }
 
   const sprite = (img, p, bob, flip) => () => {
     const x = Math.round(p.x - img.width / 2), y = Math.round(p.y - img.height + 1 - bob);
     g.fillStyle = 'rgba(25,20,15,0.3)';
-    g.fillRect(x + 2, Math.round(p.y), img.width - 4, 2);
+    g.fillRect(x + 1, Math.round(p.y) + 1, img.width - 2, 1);
     if (flip) { g.save(); g.translate(x + img.width, y); g.scale(-1, 1); g.drawImage(img, 0, 0); g.restore(); }
     else g.drawImage(img, x, y);
   };
 
   // leads first, so the sprites sit on top of them
   things.push({ y: -1e9, draw: () => {
-    pline(g, mom.x - 9, mom.y - 13, dog1.x + state.facing.dog1 * 6, dog1.y - 9, '#c8302c');
-    if (ev) pline(g, dad.x + 12, dad.y - 13, dad.x + 14, dad.y - 3, '#2e8f7a'); // dog 2 slipped its lead
-    else pline(g, dad.x + 12, dad.y - 13, dog2.x + face2 * 5, dog2.y - 9, '#2e8f7a');
+    pline(g, mom.x - 3, mom.y - 6, dog1.x + state.facing.dog1, dog1.y - 4, '#c8302c');
+    if (ev) pline(g, dad.x + 3, dad.y - 6, dad.x + 4, dad.y - 1, '#2e8f7a'); // dog 2 slipped its lead
+    else pline(g, dad.x + 3, dad.y - 6, dog2.x + face2, dog2.y - 4, '#2e8f7a');
   } });
-  things.push({ y: mom.y, draw: sprite(assets['mom-map'], mom, bobAt(0), false) });
-  things.push({ y: dad.y, draw: sprite(assets['dad-map'], dad, bobAt(0.5), false) });
-  // dog 1 faces right in the art, dog 2 faces left
-  things.push({ y: dog1.y, draw: sprite(assets['dog1-map'], dog1, bobAt(0.25, true), state.facing.dog1 < 0) });
-  things.push({ y: dog2.y, draw: sprite(assets['dog2-map'], dog2, dog2Bob, face2 > 0) });
+  things.push({ y: mom.y, draw: sprite(fam.mom[stepOf(0)], mom, 0, false) });
+  things.push({ y: dad.y, draw: sprite(fam.dad[stepOf(0.5)], dad, 0, false) });
+  // the dogs face right in the art
+  things.push({ y: dog1.y, draw: sprite(fam.dog1[stepOf(0.25, true)], dog1, hop(0.25), state.facing.dog1 < 0) });
+  things.push({ y: dog2.y, draw: sprite(fam.dog2[dog2Frame], dog2, dog2Bob, face2 < 0) });
 
   // the lizard
   if (ev && !ev.liz.hidden) {
@@ -678,7 +684,7 @@ function drawFireworks(g, cx, cy) {
   if (nextBurst <= 0) {
     nextBurst = 0.8;
     const cols = ['#ffd34d', '#ff7a8a', '#8fe3ff', '#ffffff', '#b4ff8a'];
-    const x = HILL_SPOT.x - 140 + Math.random() * 280, y = HILL_SPOT.y - 260 + Math.random() * 90;
+    const x = HILL_SPOT.x - 140 + Math.random() * 280, y = HILL_SPOT.y - 200 + Math.random() * 70;
     const c = cols[Math.floor(Math.random() * cols.length)];
     for (let k = 0; k < 24; k++) {
       const a = (k / 24) * Math.PI * 2;
@@ -708,10 +714,10 @@ function placeOverlay() {
       // the chip sits beside its signpost, on the side away from the path;
       // where the name won't fit on screen (small phones) it shows just the number
       const right = s.sx >= s.x;
-      const sx = (s.sx - cx + (right ? 18 : -18)) * scale;
+      const sx = (s.sx - cx + (right ? 10 : -10)) * scale;
       const fits = right ? sx + chipWs[n - 1] <= window.innerWidth - 8 : sx - chipWs[n - 1] >= 8;
       stopBtns[n - 1].classList.toggle('compact', !fits);
-      const y = (s.sy - cy - 28) * scale;
+      const y = (s.sy - cy - 15) * scale;
       stopBtns[n - 1].style.transform = `translate(${sx}px, ${y}px) translate(${right ? 0 : -100}%, -50%)`;
     });
     LABELS.forEach((l, k) => {
@@ -725,7 +731,7 @@ function placeOverlay() {
     const dog = state.event.dog;
     bubble.hidden = false;
     if (bubble.textContent !== text) bubble.textContent = text;
-    bubble.style.transform = `translate(${(dog.x - cx) * scale}px, ${(dog.y - 22 - cy) * scale}px) translate(-50%, -100%)`;
+    bubble.style.transform = `translate(${(dog.x - cx) * scale}px, ${(dog.y - 10 - cy) * scale}px) translate(-50%, -100%)`;
   } else if (!bubble.hidden) bubble.hidden = true;
 }
 
@@ -838,6 +844,7 @@ async function init() {
     console.error(err);
     return;
   }
+  fam = makeFamily();
   world = buildWorld(assets);
   buildOverlay();
   updateHud();

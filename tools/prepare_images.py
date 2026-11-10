@@ -120,8 +120,8 @@ for src_name, (name, w, h) in SCENES.items():
     small.save(OUT / f"{name}.png", optimize=True)
     print("scene", name, small.size)
 
-# Park and countryside trees, to scale with the family (people are 34px tall,
-# so these are roughly 6-7 m tall). Already transparent.
+# Park and countryside trees, to scale with the family (people are 16px tall,
+# about 9px to the metre, so these are roughly 6-7 m tall). Already transparent.
 import colorsys
 
 
@@ -145,9 +145,9 @@ def olive(img):
 for i in (1, 2, 3):
     tree = Image.open(SRC / f"tree {i}.png").convert("RGBA")
     tree = tree.crop(tree.getbbox())
-    for tag, h in (("l", 140), ("m", 118)):
-        shrink(tree, h).save(OUT / f"tree{i}-{tag}.png", optimize=True)
-    olive(shrink(tree, 86)).save(OUT / f"olive{i}.png", optimize=True)
+    for tag, h in (("l", 64), ("m", 54)):
+        ImageEnhance.Contrast(shrink(tree, h)).enhance(1.12).save(OUT / f"tree{i}-{tag}.png", optimize=True)
+    olive(ImageEnhance.Contrast(shrink(tree, 40)).enhance(1.12)).save(OUT / f"olive{i}.png", optimize=True)
     print("tree", i)
 
 # The lizard is drawn in code (js/sprites.js) in the colours of lizard.png:

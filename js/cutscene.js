@@ -2,7 +2,7 @@
 // countryside can stream past, the car can bump along the road, Mom and Dad
 // can bob, and the dogs can bounce about the back seat, turn to look out of
 // each side and bark at the view. The dogs always stay inside the car.
-import { bayer, hash2, disc, drawArt } from './pixel.js?v=5';
+import { bayer, hash2, disc, drawArt } from './pixel.js?v=6';
 
 export const CUT_LENGTH = 7; // seconds
 

@@ -1,5 +1,5 @@
 // Title screen backdrop: a Tuscan morning with Lucca's towers on the horizon.
-import { bayer, disc, mulberry32, hash2 } from './pixel.js?v=5';
+import { bayer, disc, mulberry32, hash2 } from './pixel.js?v=6';
 
 export function createTitle(canvas) {
   const ctx = canvas.getContext('2d');
