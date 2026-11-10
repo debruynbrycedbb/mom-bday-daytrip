@@ -1,13 +1,13 @@
 // Mom's birthday day trip: the map, the travelling family, the park chase,
 // the HUD and the stop cards.
-import { buildWorld, W, H, LABELS, POOL_RECT, HILL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=6';
-import { drawCar, drawSign, drawArrow, drawLizard, makeFamily } from './sprites.js?v=6';
-import { STOPS } from './stops.js?v=6';
-import { createScene } from './scenes.js?v=6';
-import { createTitle } from './title.js?v=6';
-import * as sound from './sound.js?v=6';
-import { hash2, pline } from './pixel.js?v=6';
-import { createCutscene, CUT_LENGTH } from './cutscene.js?v=6';
+import { buildWorld, W, H, LABELS, POOL_RECT, HILL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=7';
+import { drawCar, drawSign, drawArrow, drawLizard, makeFamily } from './sprites.js?v=7';
+import { STOPS } from './stops.js?v=7';
+import { createScene } from './scenes.js?v=7';
+import { createTitle } from './title.js?v=7';
+import * as sound from './sound.js?v=7';
+import { hash2, pline } from './pixel.js?v=7';
+import { createCutscene, CUT_LENGTH } from './cutscene.js?v=7';
 
 const $ = (s) => document.querySelector(s);
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -67,7 +67,7 @@ function loadImage(name) {
     const img = new Image();
     img.onload = () => resolve((assets[name] = img));
     img.onerror = () => reject(new Error(`Could not load ${name}`));
-    img.src = `assets/img/${name}.png?v=6`;
+    img.src = `assets/img/${name}.png?v=7`;
   });
 }
 
@@ -709,6 +709,7 @@ function placeOverlay() {
     lastCam = key;
     // full chip widths, measured while the names are showing (before any writes)
     const chipWs = stopBtns.map((b, k) => (b.classList.contains('compact') ? chipFull[k] : (chipFull[k] = b.offsetWidth)));
+    const labelWs = labelEls.map((e) => e.offsetWidth);
     world.stops.forEach((s, n) => {
       if (n === 0) return;
       // the chip sits beside its signpost, on the side away from the path;
@@ -721,7 +722,11 @@ function placeOverlay() {
       stopBtns[n - 1].style.transform = `translate(${sx}px, ${y}px) translate(${right ? 0 : -100}%, -50%)`;
     });
     LABELS.forEach((l, k) => {
-      const x = (l.x - cx) * scale, y = (l.y - cy) * scale;
+      // place names stay on screen when their spot is near the edge (phones)
+      const half = labelWs[k] / 2 + 6;
+      let x = (l.x - cx) * scale;
+      if (x > -half && x < window.innerWidth + half) x = Math.max(half, Math.min(window.innerWidth - half, x));
+      const y = (l.y - cy) * scale;
       labelEls[k].style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
     });
   }

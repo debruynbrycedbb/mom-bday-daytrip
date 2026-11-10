@@ -1,7 +1,7 @@
 // Sprites drawn in code, at the map's scale (about 9px to the metre, so the
 // family is 15-16px tall): Mom, Dad and the dogs, the convertible, the
 // signposts, the arrow and the lizard.
-import { drawArt, disc } from './pixel.js?v=6';
+import { drawArt, disc } from './pixel.js?v=7';
 
 // ---------------------------------------------------------------- the family
 // Hand-drawn at map size in the colours of the artwork (a shrunk copy of the

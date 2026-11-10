@@ -6,7 +6,7 @@
 // The ground is painted pixel by pixel in 256px tiles, made on demand.
 // Things the family can walk behind (trees, gates, lamps, café umbrellas)
 // are drawn every frame in depth order; everything else is baked into tiles.
-import { mulberry32, hash2, vnoise, bayer, hex, shade, disc, densify } from './pixel.js?v=6';
+import { mulberry32, hash2, vnoise, bayer, hex, shade, disc, densify } from './pixel.js?v=7';
 
 export const W = 1360;
 export const H = 5500;
@@ -20,7 +20,7 @@ const ROUTE = [
   { x: 590, y: 196, stop: 0 },
   { x: 590, y: 260 },
   { x: 590, y: 316 },
-  // Lucca: down the gate street, west, south, then east along the lane to stop 1
+  // Lucca: down the gate street past the fountain square, west, south, then east to stop 1
   { x: 590, y: 420 },
   { x: 590, y: 500 },
   { x: 588, y: 524 },
@@ -33,23 +33,18 @@ const ROUTE = [
   { x: 388, y: 650 },
   { x: 400, y: 654 },
   { x: 470, y: 654, stop: 1, sign: [22, -16] },
-  // past the fountain square, then straight through the piazza's two passages
-  { x: 600, y: 654 },
-  { x: 700, y: 654 },
-  { x: 782, y: 654 },
-  { x: 793, y: 660 },
-  { x: 796, y: 674 },
-  { x: 796, y: 760 },
-  { x: 796, y: 860, stop: 2, sign: [28, -4] },
-  { x: 796, y: 960 },
-  { x: 796, y: 1060 },
-  { x: 796, y: 1236 },
-  { x: 792, y: 1249 },
-  { x: 780, y: 1254 },
-  { x: 700, y: 1254 },
-  { x: 606, y: 1254 },
-  { x: 594, y: 1259 },
-  { x: 590, y: 1272 },
+  // east to the gate street, then straight down it through the piazza's two
+  // passages and on to the south gate
+  { x: 560, y: 654 },
+  { x: 578, y: 655 },
+  { x: 588, y: 662 },
+  { x: 590, y: 676 },
+  { x: 590, y: 760 },
+  { x: 590, y: 850 },
+  { x: 590, y: 925, stop: 2, sign: [28, -4] },
+  { x: 590, y: 1010 },
+  { x: 590, y: 1120 },
+  { x: 590, y: 1250 },
   { x: 590, y: 1400 },
   { x: 590, y: 1504 },
   { x: 590, y: 1560 },
@@ -111,18 +106,19 @@ const ROADS_V = [384, 590, 796];
 const ROADS_H = [414, 534, 654, 774, 894, 1014, 1134, 1254, 1374];
 const COLS = [[208, 370], [398, 576], [604, 782], [810, 972]];
 const ROWS = [[320, 400], [428, 520], [548, 640], [668, 760], [788, 880], [908, 1000], [1028, 1120], [1148, 1240], [1268, 1360], [1388, 1446]];
-const SQUARE = { x: 604, y: 428, w: 178, h: 212 };      // the fountain square
-const FOUNT = { x: 693, y: 540 };
-const RING_ZONE = { x: 604, y: 668, w: 368, h: 332 };   // paving round the piazza
+const SQUARE = { x: 604, y: 428, w: 178, h: 92 };       // the fountain square, beside the gate street
+const FOUNT = { x: 693, y: 478 };
+const RING_ZONE = { x: 398, y: 668, w: 384, h: 452 };   // paving round the piazza, in the middle of town
 const SQ_GREENS = [
-  { x: 608, y: 432, w: 30, h: 30 }, { x: 748, y: 432, w: 30, h: 30 },
-  { x: 608, y: 604, w: 30, h: 32 }, { x: 748, y: 604, w: 30, h: 32 },
+  { x: 608, y: 432, w: 20, h: 18 }, { x: 758, y: 432, w: 20, h: 18 },
+  { x: 608, y: 494, w: 20, h: 21 }, { x: 758, y: 494, w: 20, h: 21 },
 ];
-const SQ_BEDS = [{ x: 660, y: 434, w: 66, h: 7 }];
+const SQ_BEDS = [{ x: 650, y: 433, w: 86, h: 5 }];
 
-// Piazza dell'Anfiteatro: an oval ring of 3-storey houses with two passages
-// (north and south, 2*PASS wide) cut straight through it for the path
-const PIAZZA = { x: 796, y: 860, ix: 120, iy: 78, ox: 168, oy: 125, h: 54 };
+// Piazza dell'Anfiteatro, in the middle of town: an oval ring of houses a
+// storey taller than the streets round it, with two passages (north and
+// south, 2*PASS wide) cut straight through it on the line of the gate street
+const PIAZZA = { x: 590, y: 920, ix: 128, iy: 103, ox: 170, oy: 145, h: 46 };
 const PASS = 14;
 const PLAZA_END = PIAZZA.y + Math.round(PIAZZA.iy * Math.sqrt(1 - (PASS / PIAZZA.ix) ** 2)) - PIAZZA.h; // where the south roofs start
 const TOWER = { x: 292, y: 990, w: 24, d: 16, h: 92 }; // Torre Guinigi
@@ -595,33 +591,33 @@ function makeFountain() {
 
 // The fountain square's fountain: an eight-sided basin with two tiers
 function makeTownFountain() {
-  const rx = 22, ry = 13;
-  const c = cv(rx * 2 + 6, ry * 2 + 34);
+  const rx = 15, ry = 9;
+  const c = cv(rx * 2 + 6, ry * 2 + 26);
   const g = c.getContext('2d');
-  const cx = rx + 3, cy = ry + 28;
+  const cx = rx + 3, cy = ry + 20;
   const oct = (x, y, a, b) => Math.max(Math.abs(x) / a, Math.abs(y) / b, (Math.abs(x) / a + Math.abs(y) / b) / 1.35);
-  for (let y = -ry - 3; y <= ry + 5; y++)
+  for (let y = -ry - 3; y <= ry + 4; y++)
     for (let x = -rx - 3; x <= rx + 3; x++) {
-      const e = oct(x, y, rx, ry), e2 = oct(x, y - 4, rx, ry);
+      const e = oct(x, y, rx, ry), e2 = oct(x, y - 3, rx, ry);
       if (e2 < 1 && e >= 1) { g.fillStyle = y > 0 ? '#b8ab95' : '#cfc4ae'; g.fillRect(cx + x, cy + y, 1, 1); }
       if (e < 1) {
-        g.fillStyle = e > 0.84 ? (e > 0.95 ? '#9c8f78' : '#ece4d3') : hash2(x, y) < 0.07 ? '#a8dcec' : (x + y) % 7 === 0 ? '#5aa8c4' : '#4f9fbd';
+        g.fillStyle = e > 0.8 ? (e > 0.94 ? '#9c8f78' : '#ece4d3') : hash2(x, y) < 0.07 ? '#a8dcec' : (x + y) % 7 === 0 ? '#5aa8c4' : '#4f9fbd';
         g.fillRect(cx + x, cy + y, 1, 1);
       }
     }
   // lower bowl on its column, then the top bowl and spout
-  g.fillStyle = '#d9d0bf'; g.fillRect(cx - 2, cy - 12, 5, 12);
-  g.fillStyle = '#b8ab95'; g.fillRect(cx + 2, cy - 12, 1, 12);
-  for (let y = -4; y <= 4; y++)
-    for (let x = -10; x <= 10; x++) {
-      const e = ell(x, y, 0, 0, 10, 4);
-      if (e < 1) { g.fillStyle = e > 0.6 ? '#e8e0cf' : '#5aa8c4'; g.fillRect(cx + x, cy - 14 + y, 1, 1); }
+  g.fillStyle = '#d9d0bf'; g.fillRect(cx - 1, cy - 9, 4, 9);
+  g.fillStyle = '#b8ab95'; g.fillRect(cx + 2, cy - 9, 1, 9);
+  for (let y = -3; y <= 3; y++)
+    for (let x = -7; x <= 7; x++) {
+      const e = ell(x, y, 0, 0, 7, 3);
+      if (e < 1) { g.fillStyle = e > 0.55 ? '#e8e0cf' : '#5aa8c4'; g.fillRect(cx + x, cy - 10 + y, 1, 1); }
     }
-  g.fillStyle = '#b8ab95'; g.fillRect(cx - 9, cy - 10, 19, 1);
-  g.fillStyle = '#d9d0bf'; g.fillRect(cx - 1, cy - 24, 3, 10);
-  disc(g, cx, cy - 24, 4, '#e8e0cf');
-  disc(g, cx, cy - 25, 2, '#5aa8c4');
-  g.fillStyle = '#cfeaf5'; g.fillRect(cx, cy - 30, 1, 4);
+  g.fillStyle = '#b8ab95'; g.fillRect(cx - 6, cy - 7, 13, 1);
+  g.fillStyle = '#d9d0bf'; g.fillRect(cx - 1, cy - 17, 3, 7);
+  disc(g, cx, cy - 17, 3, '#e8e0cf');
+  disc(g, cx, cy - 18, 1, '#5aa8c4');
+  g.fillStyle = '#cfeaf5'; g.fillRect(cx, cy - 22, 1, 3);
   return { canvas: c, x: FOUNT.x - cx, y: FOUNT.y - cy, sortY: FOUNT.y + ry };
 }
 
@@ -758,12 +754,12 @@ function townBlocks() {
     if (overlaps(b, SQUARE) || overlaps(b, RING_ZONE)) return;
     if (r === 5 && c === 0) b.pocket = [TOWER.x - 22, TOWER.x + 22];          // Torre Guinigi
     if (r === 2 && c === 1) b.pocketFront = [480, 506];                       // stop 1's signpost
-    if ((r === 4 && c === 1) || (r === 7 && c === 2) || (r === 2 && c === 3)) b.park = true; // little public gardens
+    if ((r === 5 && c === 3) || (r === 7 && c === 2) || (r === 2 && c === 3)) b.park = true; // little public gardens
     out.push(b);
   }));
   // little gardens in the corners round the piazza
-  out.push({ x: 606, y: 670, w: 50, h: 48, plot: true }, { x: 922, y: 670, w: 48, h: 48, plot: true });
-  out.push({ x: 606, y: 940, w: 50, h: 56, plot: true }, { x: 922, y: 950, w: 48, h: 46, plot: true });
+  out.push({ x: 400, y: 670, w: 50, h: 48, plot: true }, { x: 730, y: 670, w: 50, h: 48, plot: true });
+  out.push({ x: 400, y: 1062, w: 50, h: 54, plot: true }, { x: 730, y: 1062, w: 50, h: 54, plot: true });
   return out;
 }
 const BLOCKS = townBlocks();
@@ -901,15 +897,18 @@ export function buildWorld(assets) {
   // the fountain square: fountain, benches, two café tables, trees in the corners
   const townF = makeTownFountain();
   bake(townF.canvas, townF.x, townF.y, townF.sortY);
-  for (const [bx, by] of [[662, 506], [724, 506], [662, 584], [724, 584]]) bakeAt(bench, bx, by);
+  for (const [bx, by] of [[656, 513], [730, 513]]) bakeAt(bench, bx, by);
   const umbrella = makeUmbrella();
-  for (const [ux, uy] of [[630, 540], [756, 540]]) bakeAt(umbrella, ux, uy);
-  for (const gq of SQ_GREENS) bakeAt(anyOf(gardenTrees), gq.x + gq.w / 2, gq.y + gq.h - 4);
-  for (const [lx, ly] of [[646, 470], [740, 470], [646, 626], [740, 626]]) bakeAt(lamp, lx, ly);
+  for (const [ux, uy] of [[640, 488], [746, 488]]) bakeAt(umbrella, ux, uy);
+  SQ_GREENS.forEach((gq, k) => {
+    if (k < 2) bake(anyOf(bushes), gq.x + 5, gq.y + gq.h - 9); // low at the back, so nothing hangs over the lane
+    else bakeAt(anyOf(gardenTrees), gq.x + gq.w / 2, gq.y + gq.h - 3);
+  });
+  for (const [lx, ly] of [[646, 452], [740, 452]]) bakeAt(lamp, lx, ly);
 
   // café tables in the piazza, in the part of the square in view (the
   // family walks among these, so they're drawn in depth order)
-  for (const [x, y] of [[740, 820], [852, 820], [746, 872], [858, 872]]) sprites.push({ img: umbrella, x, y, kind: 'umbrella' });
+  for (const [x, y] of [[530, 860], [650, 860], [500, 905], [680, 905], [536, 950], [646, 950]]) sprites.push({ img: umbrella, x, y, kind: 'umbrella' });
 
   // ---- Lucca's gates, and the olive trees along the top of the walls
   for (const gate of GATES) sprites.push({ ...makeGate(gate), kind: 'gate' });
@@ -1404,8 +1403,8 @@ function squarePixel(X, Y, h1, dith) {
     return h1 < 0.35 ? P(['#f29bb7', '#f6d55c', '#fff7e8', '#e0533f'][Math.floor(hash2(Y, X) * 4)]) : P('#3f7a35');
   }
   const r = Math.hypot(X + 0.5 - FOUNT.x, (Y + 0.5 - FOUNT.y) * 1.6);
-  if (Math.abs(r - 46) < 1.2 || Math.abs(r - 50) < 0.8) return P('#b8a07a');
-  if (r < 46) return (X + Y) % 2 === 0 && h1 < 0.5 ? P('#d2bf9a') : P('#dccaa6');
+  if (Math.abs(r - 30) < 1.2 || Math.abs(r - 33) < 0.8) return P('#b8a07a');
+  if (r < 30) return (X + Y) % 2 === 0 && h1 < 0.5 ? P('#d2bf9a') : P('#dccaa6');
   const joint = lx % 10 === 0 || ly % 10 === 0;
   return joint ? P('#c9b28c') : h1 < 0.1 ? P('#e3d3b0') : P('#d8c4a0');
 }
@@ -1475,7 +1474,7 @@ function ringPixel(X, Y, h1) {
       if (hb < top + 1) return shade(wall, 0.78);
     }
     const s0 = wide ? 2 : 5, w0 = wide ? 4 : 5, w1 = wide ? 10 : 9, s1 = wide ? 12 : 9;
-    for (const rb of [25, 41]) {
+    for (const rb of [23, 35]) {
       const rel = hb - rb;
       if (wx < s0 || wx >= s1) break;
       if (rel === -1) return shade(wall, 1.15);
