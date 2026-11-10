@@ -19,13 +19,13 @@ All stop text is in `js/stops.js`. Anything in `[square brackets]` is a placehol
 - `[Dog 2’s name]` shows in the status line during the lizard chase (in `js/main.js`, `updateHud`)
 - `[Date of the trip]` is on the title screen, in `index.html`
 
-After any change, bump the version (currently `?v=4`, so next `?v=5`) in `index.html`, in every `import` line in `js/*.js` and in `loadImage` in `js/main.js`, so browsers fetch the new files.
+After any change, bump the version (currently `?v=5`, so next `?v=6`) in `index.html`, in every `import` line in `js/*.js` and in `loadImage` in `js/main.js`, so browsers fetch the new files.
 
 ## How it's built
 
 Plain HTML, CSS and JavaScript modules. No build step, no libraries.
 
-- `js/world.js`: draws the whole map in code (Lucca's walls and gates, the houses, the oval piazza, Torre Guinigi, the park, the river, the Ponte della Maddalena, fields, trees, Bagni di Lucca and the spa) and defines the route (`ROUTE`) and the lizard's run (`CHASE`). The ground is painted in 256px tiles as the camera needs them.
+- `js/world.js`: draws the whole map in code (Lucca's walls and gates, the town blocks in `BLOCKS` with their houses, gardens, trees, benches and lamps, the oval piazza with its two passages, Torre Guinigi, the park, the river, the Ponte della Maddalena, fields, trees, Bagni di Lucca and the spa) and defines the route (`ROUTE`) and the lizard's run (`CHASE`). The ground is painted in 256px tiles as the camera needs them.
 - `js/main.js`: camera, travelling family, the lizard chase (timeline in `EV`), HUD, stop cards.
 - `js/scenes.js`: the animated scenes on the stop cards (clouds, petals, strolling people, rippling water, steam, candles, fireworks).
 - `js/cutscene.js`: the drive cutscene. The car picture is cut into layers (car, front, Mom's and Dad's heads, both dogs) so the countryside can stream past, the car bumps, Mom and Dad bob, and the dogs hop about the back seat and turn to look out of each side, barking ("YIP!" for dog 1, "WOOF!" for dog 2, with a bark sound for each and wind noise if sound is on). They always stay inside the car. The dogs' moves are in `ROUTINE`, the barks in `BARKS`. The scenery is removed from the picture by filling out from the sky and the view through the windscreen, stopping at dark outlines, so the frame and Mom's hat stay intact. Timing: 3 s of driving on the map, the 7 s cutscene, then about 3 s more to the baths (`DRIVE_BEFORE_CUT`, `CUT_LENGTH`, `DRIVE_AFTER_CUT`).

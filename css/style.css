@@ -152,6 +152,9 @@ canvas {
 .stop-chip[data-state="done"] .num { background: var(--terracotta); }
 .stop-chip[data-state="locked"] { background: #e9dcc0; color: #4d3a2e; }
 .stop-chip.shake { animation: shake 0.4s steps(4); }
+/* no room beside the signpost (small phones): show just the number; the name stays readable to screen readers */
+.stop-chip.compact { gap: 0; padding-right: 0.35rem; }
+.stop-chip.compact .chip-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 
 @keyframes shake {
   25% { margin-left: -4px; }

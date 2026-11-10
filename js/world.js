@@ -6,7 +6,7 @@
 // The ground is painted pixel by pixel in 256px tiles, made on demand.
 // Tall things the family can walk behind (trees, gates, lamps) are drawn
 // every frame in depth order; everything else is baked into the tiles.
-import { mulberry32, hash2, vnoise, bayer, hex, shade, disc, densify } from './pixel.js?v=4';
+import { mulberry32, hash2, vnoise, bayer, hex, shade, disc, densify } from './pixel.js?v=5';
 
 export const W = 1360;
 export const H = 5500;
@@ -20,16 +20,30 @@ const ROUTE = [
   { x: 590, y: 150, stop: 0 },
   { x: 590, y: 250 },
   { x: 590, y: 340 },
-  { x: 566, y: 430 },
-  { x: 506, y: 520 },
-  { x: 470, y: 620, stop: 1, sign: [70, -4] },
-  { x: 476, y: 716 },
-  { x: 530, y: 800 },
-  { x: 586, y: 890 },
+  // inside the walls the walk follows the lanes between the blocks
+  { x: 590, y: 420 },
+  { x: 586, y: 458 },
+  { x: 562, y: 476 },
+  { x: 500, y: 476 },
+  { x: 452, y: 482 },
+  { x: 432, y: 512 },
+  { x: 430, y: 610, stop: 1, sign: [52, -4] },
+  { x: 432, y: 676 },
+  { x: 452, y: 698 },
+  { x: 490, y: 702 },
+  { x: 600, y: 702 },
+  { x: 628, y: 708 },
+  { x: 640, y: 730 },
+  // straight through the north passage of the piazza, and out through the south one
+  { x: 640, y: 800 },
+  { x: 640, y: 900 },
   { x: 640, y: 1010, stop: 2, sign: [66, -4] },
-  { x: 650, y: 1130 },
-  { x: 640, y: 1240 },
-  { x: 602, y: 1350 },
+  { x: 640, y: 1110 },
+  { x: 640, y: 1210 },
+  { x: 640, y: 1270 },
+  { x: 628, y: 1320 },
+  { x: 600, y: 1366 },
+  { x: 590, y: 1410 },
   { x: 590, y: 1450 },
   { x: 590, y: 1560 },
   { x: 590, y: 1640 },
@@ -83,9 +97,40 @@ const WALL_H = 56;
 const BASTIONS = [[120, 560], [120, 1260], [1060, 560], [1060, 1260], [330, 260], [850, 260], [330, 1560], [850, 1560]];
 const GATES = [{ x: 590, n: 260, s: 370 }, { x: 590, n: 1450, s: 1560 }];
 
-// Piazza dell'Anfiteatro: an oval ring of 3-storey houses
+// Piazza dell'Anfiteatro: an oval ring of 3-storey houses, with two passages
+// (north and south, 2*PASS wide) cut straight through it for the path
 const PIAZZA = { x: 640, y: 1010, ix: 170, iy: 115, ox: 255, oy: 185, h: 92 };
+const PASS = 34;
+const PLAZA_END = PIAZZA.y + Math.round(PIAZZA.iy * Math.sqrt(1 - (PASS / PIAZZA.ix) ** 2)) - PIAZZA.h; // where the south roofs start
 const TOWER = { x: 340, y: 1210, w: 50, d: 40, h: 196 }; // Torre Guinigi
+
+// Lucca's town blocks: raised garden plots with a stone kerb, houses along the
+// back, a front garden (bushes, small trees, benches) and lamps on the corners.
+// The cobbled lanes between them are where the walk goes.
+// garden = depth of the front garden; pocket = [from, to] kept free of houses.
+const BLOCKS = [
+  // row A, against the north wall, either side of the gate
+  { x: 246, y: 378, w: 258, h: 68, garden: 4, tall: true },
+  { x: 676, y: 378, w: 258, h: 68, garden: 4, tall: true },
+  // row B
+  { x: 246, y: 506, w: 152, h: 166, garden: 12 },
+  { x: 462, y: 506, w: 266, h: 166, garden: 12, pocket: [462, 540] }, // garden corner for stop 1's signpost
+  { x: 792, y: 506, w: 142, h: 166, garden: 12 },
+  // west of the piazza, and Torre Guinigi's garden
+  { x: 246, y: 740, w: 132, h: 140, garden: 14 },
+  { x: 246, y: 918, w: 140, h: 128, garden: 12 },
+  { x: 246, y: 1060, w: 140, h: 154, garden: 14, pocket: [298, 386] },
+  // a strip of cypresses east of the piazza
+  { x: 906, y: 744, w: 28, h: 466, garden: 0, strip: true },
+  // little gardens in the corners round the piazza
+  { x: 392, y: 742, w: 46, h: 56, garden: 0, plot: true },
+  { x: 842, y: 742, w: 50, h: 56, garden: 0, plot: true },
+  { x: 392, y: 1160, w: 80, h: 50, garden: 0, plot: true },
+  { x: 808, y: 1160, w: 80, h: 50, garden: 0, plot: true },
+  // row D, south of the piazza
+  { x: 246, y: 1254, w: 312, h: 138, garden: 16 },
+  { x: 676, y: 1254, w: 258, h: 138, garden: 16 },
+];
 
 // The park, south of the walls (hedge border)
 const PARK = { x: 280, y: 1690, w: 660, h: 650, hedge: 12, hedgeH: 18 };
@@ -125,7 +170,7 @@ const MADDALENA = { x: 1140, y: 2790, w: 210 }; // Ponte della Maddalena
 export const LABELS = [
   { text: 'Lucca', x: 360, y: 168 },
   { text: 'Torre Guinigi', x: TOWER.x, y: TOWER.y - TOWER.h - TOWER.d - 46 },
-  { text: "Piazza dell'Anfiteatro", x: PIAZZA.x, y: PIAZZA.y - PIAZZA.oy - PIAZZA.h - 6 },
+  { text: "Piazza dell'Anfiteatro", x: PIAZZA.x + 150, y: PIAZZA.y - PIAZZA.oy - 30 },
   { text: 'Serchio valley', x: 1120, y: 2560 },
   { text: 'Ponte della Maddalena', x: MADDALENA.x + MADDALENA.w / 2, y: MADDALENA.y - 56 },
   { text: 'Bagni di Lucca', x: 1090, y: 4590 },
@@ -152,6 +197,36 @@ const sdWall = (x, y) => {
 const gateCut = (x, y) => GATES.some((g) => Math.abs(x - g.x) < 44 && y > g.n - 30 && y < g.s + 30);
 const inWall = (x, y) => sdWall(x, y) < 0 && sdRR(x, y) > -BAND && !gateCut(x, y);
 const ell = (x, y, cx, cy, rx, ry) => ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+
+// The piazza's ring, worked out one column at a time. In a column the ring's
+// footprint is one stretch [a, b) at the narrow ends of the oval, or two
+// (south half, then north half) where the column crosses the square.
+// Each stretch shows as a roof lifted PIAZZA.h above it, then its south-facing
+// facade down to b. Part s: 1 south, -1 north, 0 a whole column at the ends.
+const ringOuter = (dx) => PIAZZA.oy * Math.sqrt(Math.max(0, 1 - (dx / PIAZZA.ox) ** 2));
+const ringInner = (dx) => PIAZZA.iy * Math.sqrt(Math.max(0, 1 - (dx / PIAZZA.ix) ** 2));
+const ringCache = new Map();
+function ringCols(X) {
+  let v = ringCache.get(X);
+  if (v !== undefined) return v;
+  const dx = X + 0.5 - PIAZZA.x;
+  v = null;
+  if (Math.abs(dx) < PIAZZA.ox && Math.abs(dx) >= PASS) {
+    const Ho = Math.round(ringOuter(dx));
+    if (Math.abs(dx) < PIAZZA.ix - 1) {
+      const Hi = Math.round(ringInner(dx));
+      v = [{ a: PIAZZA.y + Hi, b: PIAZZA.y + Ho, s: 1 }, { a: PIAZZA.y - Ho, b: PIAZZA.y - Hi, s: -1 }];
+    } else if (Ho > 0) v = [{ a: PIAZZA.y - Ho, b: PIAZZA.y + Ho, s: 0 }];
+  }
+  ringCache.set(X, v);
+  return v;
+}
+function ringAt(X, Y) {
+  const cols = ringCols(X);
+  if (!cols) return null;
+  for (const iv of cols) if (Y >= iv.a - PIAZZA.h && Y < iv.b) return iv;
+  return null;
+}
 
 // ---------------------------------------------------------------- palettes
 
@@ -282,6 +357,73 @@ function makeHouse(w, floors, roofD, seed, opts = {}) {
   g.fillStyle = '#2a1a14';
   g.fillRect(0, 0, w, 1); g.fillRect(0, 0, 1, h); g.fillRect(w - 1, 0, 1, h); g.fillRect(0, h - 1, w, 1);
   g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(w - 4, roofD, 3, fh - 1);
+  c.door = doorX; // so gardens can keep the doorway clear
+  return c;
+}
+
+// A low garden bush (≈0.9 m), sometimes in flower
+function makeBush(seed) {
+  const rand = mulberry32(seed);
+  const w = 18 + Math.floor(rand() * 6), h = 13;
+  const c = cv(w, h);
+  const g = c.getContext('2d');
+  const flower = rand() < 0.45 ? ['#f29bb7', '#f6d55c', '#fff7e8', '#e0533f'][Math.floor(rand() * 4)] : null;
+  g.fillStyle = 'rgba(25,20,15,0.3)'; g.fillRect(2, h - 2, w - 4, 2);
+  for (let y = 0; y < h - 1; y++)
+    for (let x = 0; x < w; x++) {
+      const e = ((x + 0.5 - w / 2) / (w / 2)) ** 2 + ((y + 0.5 - (h - 1) / 2 - 0.5) / ((h - 1) / 2)) ** 2;
+      if (e > 1) continue;
+      const lit = x < w * 0.45 && y < h * 0.5;
+      let col = e > 0.72 ? '#1d4a22' : lit ? '#5f9a48' : hash2(x + seed, y) < 0.25 ? '#2f6a34' : '#3b7a3c';
+      if (flower && e < 0.72 && hash2(y + seed, x) < 0.16) col = flower;
+      g.fillStyle = col; g.fillRect(x, y, 1, 1);
+    }
+  return c;
+}
+
+// A small ornamental garden tree (≈3 m), round-headed, in the style of the map
+function makeGardenTree(seed) {
+  const rand = mulberry32(seed);
+  const r = 14 + Math.floor(rand() * 6);
+  const w = r * 2 + 6, h = r * 2 + 20;
+  const c = cv(w, h);
+  const g = c.getContext('2d');
+  const cx = w / 2, cy = r + 3;
+  g.fillStyle = 'rgba(25,20,15,0.3)'; g.fillRect(cx - 9, h - 3, 18, 3);
+  g.fillStyle = '#2a1a14'; g.fillRect(cx - 3, cy + r - 6, 6, h - (cy + r - 6) - 1);
+  g.fillStyle = '#6b4a2f'; g.fillRect(cx - 2, cy + r - 6, 4, h - (cy + r - 6) - 2);
+  g.fillStyle = '#8a5a35'; g.fillRect(cx - 2, cy + r - 6, 1, h - (cy + r - 6) - 2);
+  const pal = rand() < 0.5 ? ['#1d3a1e', '#2f5a2c', '#3f7a35', '#5f9a48', '#83b456'] : ['#1f3b24', '#2e5e3a', '#3c7444', '#5a9450', '#7cb05a'];
+  for (let y = -r - 1; y <= r + 1; y++)
+    for (let x = -r - 1; x <= r + 1; x++) {
+      // a lumpy round head: a circle with a few bumps on the edge
+      const a = Math.atan2(y, x);
+      const R = r + Math.round(Math.sin(a * 5 + seed) * 1.4);
+      const d = Math.hypot(x + 0.5, y + 0.5);
+      if (d > R + 1) continue;
+      let col;
+      if (d > R) col = pal[0];
+      else {
+        const light = (-x - y) / (r * 1.6) + (bayer(x + 40, y + 40) - 0.5) * 0.5;
+        col = light > 0.55 ? pal[4] : light > 0.12 ? pal[3] : light > -0.45 ? pal[2] : pal[1];
+        if (hash2(x + seed * 7, y) < 0.06) col = pal[1];
+      }
+      g.fillStyle = col; g.fillRect(Math.round(cx + x), cy + y, 1, 1);
+    }
+  return c;
+}
+
+// A terracotta pot with a geranium, for doorsteps (≈0.5 m)
+function makePot(seed) {
+  const c = cv(10, 13);
+  const g = c.getContext('2d');
+  const bloom = ['#e0533f', '#f29bb7', '#fff7e8'][seed % 3];
+  g.fillStyle = '#2a1a14'; g.fillRect(1, 6, 8, 7);
+  g.fillStyle = '#c4552f'; g.fillRect(2, 7, 6, 5);
+  g.fillStyle = '#d9773f'; g.fillRect(2, 7, 6, 1);
+  g.fillStyle = '#2f6a34'; g.fillRect(1, 2, 8, 5);
+  g.fillStyle = '#3b7a3c'; g.fillRect(2, 1, 6, 4);
+  g.fillStyle = bloom; g.fillRect(2, 1, 2, 2); g.fillRect(6, 2, 2, 2); g.fillRect(4, 0, 2, 2);
   return c;
 }
 
@@ -579,33 +721,117 @@ export function buildWorld(assets) {
   const occupied = (x, y, w, h) => rects.some((q) => x < q.x + q.w && x + w > q.x && y < q.y + q.h && y + h > q.y);
   const occupy = (x, y, w, h) => rects.push({ x, y, w, h });
 
-  // ---- Lucca: rows of houses facing the streets
-  const houseOk = (x, y, w, h) => {
-    for (let yy = y; yy <= y + h; yy += 10)
-      for (let xx = x; xx <= x + w; xx += 10) {
-        if (nearRoute(xx, yy, 60) < 46) return false;
-        if (ell(xx, yy, PIAZZA.x, PIAZZA.y, PIAZZA.ox + 24, PIAZZA.oy + 24) < 1) return false;
-        if (ell(xx, yy, PIAZZA.x, PIAZZA.y - PIAZZA.h, PIAZZA.ox + 24, PIAZZA.oy + 24) < 1) return false;
-        if (xx > TOWER.x - 60 && xx < TOWER.x + 60 && yy > TOWER.y - 280 && yy < TOWER.y + 30) return false;
-      }
-    if (sdRR(x, y + h) > -BAND - 6 || sdRR(x + w, y + h) > -BAND - 6) return false;
-    if (sdRR(x, y) > -BAND + WALL_H || sdRR(x + w, y) > -BAND + WALL_H) return false;
+  // ---- Lucca: town blocks of houses and gardens between the lanes
+  const lamp = makeLamp();
+  const bushes = Array.from({ length: 6 }, (_, k) => makeBush(11 + k * 17));
+  const gardenTrees = Array.from({ length: 4 }, (_, k) => makeGardenTree(5 + k * 23));
+  const pots = [makePot(0), makePot(1), makePot(2)];
+  const bench = makeBench();
+  const cypressLucca = [makeCypress(3), makeCypress(9)];
+  // keep anything that stands up out of the walkers' way (they take ~60px across)
+  const offPath = (x0, y0, x1, y1, m = 34) => {
+    for (let y = y0; y <= y1; y += 6) for (let x = x0; x <= x1; x += 6) if (nearRoute(x, y, m + 40) < m) return false;
     return true;
   };
-  for (let yb = 1440; yb >= 430; yb -= 200) {
-    let x = 236 + Math.floor(rand() * 20);
-    while (x < 940) {
-      const w = 70 + Math.floor(rand() * 64);
-      const floors = rand() < 0.55 ? 3 : 2;
-      const roofD = 40 + Math.floor(rand() * 6);
-      const h = roofD + 48 + 32 * (floors - 1);
-      if (x + w <= 948 && houseOk(x, yb - h, w, h)) baked.push({ canvas: makeHouse(w, floors, roofD, rand()), x, y: yb - h, sortY: yb });
-      x += w + (rand() < 0.15 ? 26 : 0);
+  const stop1 = ROUTE.find((c) => c.stop === 1);
+  const sign1 = { x: stop1.x + stop1.sign[0], y: stop1.y + stop1.sign[1] };
+  const nearSign = (x0, y0, x1, y1) => x1 > sign1.x - 18 && x0 < sign1.x + 18 && y1 > sign1.y - 58 && y0 < sign1.y + 6;
+  const putTree = (img, x, y) => {
+    if (!offPath(x - img.width / 2, y - img.height, x + img.width / 2, y) || nearSign(x - img.width / 2, y - img.height, x + img.width / 2, y)) return false;
+    sprites.push({ img, x, y, kind: 'tree' });
+    return true;
+  };
+  const putLamp = (x, y) => {
+    if (!offPath(x - 7, y - 74, x + 7, y, 30) || nearSign(x - 7, y - 74, x + 7, y)) return;
+    sprites.push({ img: lamp, x, y, kind: 'lamp' });
+  };
+  const bake = (canvas, x, y) => baked.push({ canvas, x, y, sortY: y + canvas.height });
+
+  for (const b of BLOCKS) {
+    const bottom = b.y + b.h;
+    b.beds = [];
+    if (b.strip) {
+      for (let y = b.y + 110; y < bottom; y += 92) sprites.push({ img: cypressLucca[(y / 92) & 1], x: b.x + b.w / 2, y, kind: 'tree' });
+      continue;
     }
+    if (b.plot) {
+      putTree(gardenTrees[(b.x >> 3) % gardenTrees.length], b.x + b.w / 2, bottom - 8);
+      bake(bushes[(b.x >> 2) % bushes.length], b.x + 4, bottom - 19);
+      bake(bushes[(b.x >> 1) % bushes.length], b.x + b.w - 26, bottom - 19);
+      continue;
+    }
+    const front = bottom - Math.max(4, b.garden);
+    const maxH = b.tall ? 200 : front - (b.y + 2);
+    const pockets = [];
+    let x = b.x + 4;
+    const end = b.x + b.w - 4;
+    while (x < end) {
+      if (b.pocket && x < b.pocket[1] && x + 46 > b.pocket[0]) {
+        const p0 = Math.max(x, b.pocket[0]);
+        if (p0 > x) pockets.push([x, p0]);
+        pockets.push([p0, b.pocket[1]]);
+        x = b.pocket[1];
+        continue;
+      }
+      const room = end - x;
+      if (room < 54) { pockets.push([x, end]); break; }
+      if (room > 120 && !(b.pocket && b.pocket[0] > x && b.pocket[0] - x < 120) && rand() < 0.16) {
+        const pw = 34 + Math.floor(rand() * 18);
+        pockets.push([x, x + pw]);
+        x += pw;
+        continue;
+      }
+      let w = 56 + Math.floor(rand() * 40);
+      if (room - w < 54) w = room > 130 ? Math.floor(room / 2) : room;
+      if (b.pocket && x < b.pocket[0]) w = Math.min(w, b.pocket[0] - x);
+      if (w < 46) { pockets.push([x, x + w]); x += w; continue; }
+      let floors = rand() < 0.5 ? 3 : 2, roofD = 40 + Math.floor(rand() * 6);
+      while (floors > 1 && roofD + 48 + 32 * (floors - 1) > maxH) { if (roofD > 40) roofD = 40; else floors--; }
+      // townhouses run deep: let the roof reach most of the way to the back of the plot
+      if (!b.tall) roofD = Math.max(roofD, Math.min(84, maxH - (48 + 32 * (floors - 1)) - Math.floor(rand() * 12)));
+      const hh = roofD + 48 + 32 * (floors - 1);
+      const house = makeHouse(w, floors, roofD, rand());
+      baked.push({ canvas: house, x, y: front - hh, sortY: front });
+      // the front garden: a pot by the door, bushes along the kerb
+      const door = x + house.door;
+      if (b.garden < 8) {
+        const px = rand() < 0.5 ? door - 12 : door + 23;
+        if (px > x + 2 && px + 10 < x + w - 2) bake(pots[Math.floor(rand() * 3)], px, bottom - 14);
+      } else {
+        for (let bx = x + 3; bx + 22 < x + w; bx += 26 + Math.floor(rand() * 18)) {
+          if (bx + 24 > door - 4 && bx < door + 24) continue;
+          const bush = bushes[Math.floor(rand() * bushes.length)];
+          bake(bush, bx, bottom - 6 - bush.height);
+        }
+      }
+      x += w;
+    }
+    // gardens between the houses: a small tree, sometimes a bench in front
+    for (const [p0, p1] of pockets) {
+      const pw = p1 - p0, mid = Math.round((p0 + p1) / 2);
+      if (b.y === 1060 && p0 >= 290) continue; // Torre Guinigi stands here
+      if (pw < 26) continue;
+      const small = gardenTrees[Math.floor(rand() * gardenTrees.length)];
+      const big = pw > 70 && b.garden >= 12 ? (rand() < 0.5 ? assets['olive1'] : assets['tree2-m']) : small;
+      if (!putTree(big, mid, front - 2) && !putTree(small, mid, front - 2)) putTree(small, p1 - small.width / 2 - 2, front - 2);
+      if (pw >= 66 && b.garden >= 12 && !nearSign(p0 + 4, bottom - 26, p0 + 44, bottom - 4)) bake(bench, p0 + 4, bottom - 26);
+      if (pw >= 40 && b.garden >= 12) b.beds.push({ x: p0 + 5, y: b.y + 8, w: pw - 10, h: 12 });
+      if (pw >= 44 && b.garden >= 12) {
+        const bush = bushes[Math.floor(rand() * bushes.length)];
+        bake(bush, p0 + 2, bottom - 6 - bush.height);
+      }
+    }
+    // lamps on the front corners
+    if (b.garden >= 8) { putLamp(b.x + 8, bottom - 4); putLamp(b.x + b.w - 8, bottom - 4); }
   }
-  // café tables under umbrellas in the piazza (umbrellas ≈2.5 m across)
+  // Torre Guinigi's garden
+  putTree(gardenTrees[1], 300, 1206);
+  putTree(gardenTrees[3], 378, 1206);
+  // lamps by the gates and round the piazza
+  for (const [lx, ly] of [[530, 440], [652, 440], [420, 1236], [860, 1236]]) putLamp(lx, ly);
+  // café tables under umbrellas (≈2.5 m across), in the part of the square in view
   const umbrella = makeUmbrella();
-  for (const [x, y] of [[548, 1062], [600, 1104], [730, 1092], [786, 1034], [520, 990]]) sprites.push({ img: umbrella, x, y, kind: 'umbrella' });
+  for (const [x, y] of [[580, 930], [700, 930], [545, 980], [752, 990]]) sprites.push({ img: umbrella, x, y, kind: 'umbrella' });
   const tower = makeTower();
   baked.push({ ...tower, sortY: TOWER.y });
 
@@ -642,9 +868,7 @@ export function buildWorld(assets) {
   // ---- the park
   const fountain = makeFountain();
   baked.push({ ...fountain, sortY: FOUNTAIN.y + FOUNTAIN.ry });
-  const bench = makeBench();
   for (const [x, y] of [[452, 1856], [694, 2232], [470, 1712]]) baked.push({ canvas: bench, x: x - 20, y: y - 20, sortY: y });
-  const lamp = makeLamp();
   for (const [x, y] of [[546, 1760], [454, 1990], [584, 2200], [660, 1780]]) sprites.push({ img: lamp, x, y, kind: 'lamp' });
   const parkTrees = [
     ['tree2-l', 356, 1806], ['tree3-l', 330, 2128], ['tree2-m', 880, 1796], ['tree3-m', 450, 2290],
@@ -796,8 +1020,7 @@ export function buildWorld(assets) {
     const nearWalls = sdWall(x0 + CH / 2, y0 + CH / 2) < CH + WALL_H + 20 && sdRR(x0 + CH / 2, y0 + CH / 2) > -BAND - WALL_H - CH;
     const nearRing = Math.abs(x0 + CH / 2 - PIAZZA.x) < PIAZZA.ox + CH && y0 + CH > PIAZZA.y - PIAZZA.oy - PIAZZA.h - 10 && y0 < PIAZZA.y + PIAZZA.oy + 10;
     const nearPark = x0 + CH > PARK.x - 4 && x0 < PARK.x + PARK.w + 4 && y0 + CH > PARK.y - PARK.hedgeH - 4 && y0 < PARK.y + PARK.h + 4;
-    const ringF = (X, Y) =>
-      ell(X, Y, PIAZZA.x, PIAZZA.y, PIAZZA.ox, PIAZZA.oy) < 1 && ell(X, Y, PIAZZA.x, PIAZZA.y, PIAZZA.ix, PIAZZA.iy) >= 1 && !m(A, 0, X, Y);
+    const tileBlocks = BLOCKS.filter((b) => b.x < x0 + CH && b.x + b.w > x0 && b.y < y0 + CH && b.y + b.h > y0);
     const hedgeF = (X, Y) => {
       const inOuter = X >= PARK.x && X < PARK.x + PARK.w && Y >= PARK.y && Y < PARK.y + PARK.h;
       const inInner = X >= PARK.x + PARK.hedge && X < PARK.x + PARK.w - PARK.hedge && Y >= PARK.y + PARK.hedge && Y < PARK.y + PARK.h - PARK.hedge;
@@ -842,34 +1065,7 @@ export function buildWorld(assets) {
         }
 
         // 2. the oval ring of houses around the piazza
-        if (!c && nearRing && Math.abs(X - PIAZZA.x) < PIAZZA.ox + 2 && Y > PIAZZA.y - PIAZZA.oy - PIAZZA.h - 2 && Y < PIAZZA.y + PIAZZA.oy + 2) {
-          const PH = PIAZZA.h;
-          const seg = Math.floor(((Math.atan2(Y - PIAZZA.y, X - PIAZZA.x) + Math.PI) / (Math.PI * 2)) * 18);
-          if (ringF(X, Y + PH)) {
-            const em = ell(X, Y + PH, PIAZZA.x, PIAZZA.y, (PIAZZA.ix + PIAZZA.ox) / 2, (PIAZZA.iy + PIAZZA.oy) / 2);
-            const roof = shade(C.roof[0], 0.96 + hash2(seg, 4) * 0.08);
-            c = Math.abs(em - 1) < 0.035 ? shade(roof, 1.25) : Y % 4 === 0 ? shade(roof, 0.85) : em < 1 ? shade(roof, 0.92) : roof;
-          } else {
-            for (let t = PH - 1; t >= 0; t--) {
-              if (!ringF(X, Y + t)) continue;
-              const wall = C.facade[(seg * 7) % C.facade.length];
-              const ax = (X + seg * 7) % 36;
-              if (t >= PH - 4) c = shade(wall, 1.12);
-              else if (t < 2) c = shade(wall, 0.65);
-              else if (t < 34) {
-                // arcade of shop arches on the ground floor
-                const archTop = 26 + Math.round(Math.sqrt(Math.max(0, 81 - (ax - 18) ** 2)) * 0.6);
-                c = ax > 8 && ax < 28 && t < archTop - 2 ? (t < 3 ? P('#4a3a2e') : P('#3b2a20')) : wall;
-              } else {
-                const wx = (X + seg * 5) % 26;
-                const row = (t > 44 && t < 60) || (t > 70 && t < 86);
-                if (row && wx > 6 && wx < 19) c = wx < 9 || wx > 16 ? P('#3e6b45') : P('#2f2622');
-                else c = h1 < 0.1 ? shade(wall, 0.95) : wall;
-              }
-              break;
-            }
-          }
-        }
+        if (!c && nearRing) c = ringPixel(X, Y, h1);
 
         // 3. the park hedge (1 m tall)
         if (!c && nearPark) {
@@ -879,8 +1075,11 @@ export function buildWorld(assets) {
 
         if (!c) {
           const dr = sdRR(X, Y);
-          if (dr < -BAND) {
-            if (ell(X, Y, PIAZZA.x, PIAZZA.y, PIAZZA.ix, PIAZZA.iy) < 1) {
+          const blk = dr < -BAND && tileBlocks.find((b) => X >= b.x && X < b.x + b.w && Y >= b.y && Y < b.y + b.h);
+          if (blk) {
+            c = blockPixel(blk, X, Y, h1, dith);
+          } else if (dr < -BAND) {
+            if (ell(X, Y, PIAZZA.x, PIAZZA.y, PIAZZA.ix, PIAZZA.iy) < 1 && Y < PLAZA_END) {
               const e = ell(X, Y, PIAZZA.x, PIAZZA.y, PIAZZA.ix, PIAZZA.iy);
               c = e > 0.9 ? C.plaza[2] : X % 12 === 0 || Y % 12 === 0 ? shade(C.plaza[0], 0.92) : pick(C.plaza, h1 * 0.7);
             } else {
@@ -1044,4 +1243,100 @@ function fieldPixel(f, X, Y, h1, dith) {
     default: // ploughed earth
       return ly % 8 < 3 ? P('#7a5838') : h1 < 0.2 ? P('#a07650') : P('#8f6844');
   }
+}
+
+// A town block: a stone kerb (its front face catching shadow) around a lawn
+function blockPixel(b, X, Y, h1, dith) {
+  const lx = X - b.x, ly = Y - b.y, rx = b.x + b.w - 1 - X, ry = b.y + b.h - 1 - Y;
+  if (ry === 0) return P('#7d6a4f');
+  if (ry < 3) return h1 < 0.15 ? P('#a8936f') : P('#b8a07a');
+  if (lx === 0 || rx === 0 || ly === 0) return P('#9c8664');
+  if (lx < 3 || rx < 3 || ly < 3 || ry < 5) return h1 < 0.12 ? P('#d6c6a2') : P('#e6d8b6');
+  if (ry < 6 || lx < 4 || rx < 4) return shade(C.lawn[0], 0.86); // kerb shadow on the grass
+  const bed = b.beds && b.beds.find((q) => X >= q.x && X < q.x + q.w && Y >= q.y && Y < q.y + q.h);
+  if (bed) {
+    const e = X === bed.x || Y === bed.y || X === bed.x + bed.w - 1 || Y === bed.y + bed.h - 1;
+    if (e) return P('#9c8664');
+    return h1 < 0.3 ? P(['#f29bb7', '#f6d55c', '#fff7e8', '#e0533f', '#c9a2e0'][Math.floor(hash2(Y, X) * 5)]) : h1 < 0.62 ? P('#3f7a35') : P('#6b4a2f');
+  }
+  if (h1 < 0.006) return P(['#f29bb7', '#f6d55c', '#fff7e8'][Math.floor(hash2(Y, X) * 3)]);
+  return C.lawn[h1 < 0.5 + dith * 0.4 ? 0 : 1];
+}
+
+// One pixel of the piazza's ring of houses (or null where there is none).
+// Roofs follow the ring with a ridge along its middle; facades are split into
+// houses and 26px bays, and each bay's windows and arch sit level on that
+// bay's own baseline, so they stay upright and evenly spaced round the curve.
+const INK = P('#2a1a14');
+const RING_BAY = 26;
+const RING_MX = (PIAZZA.ix + PIAZZA.ox) / 2, RING_MY = (PIAZZA.iy + PIAZZA.oy) / 2;
+const RING_ROOF = C.roof[0], RING_ROOF_IN = shade(C.roof[0], 0.9);
+function ringPixel(X, Y, h1) {
+  const iv = ringAt(X, Y);
+  if (!iv) return null;
+  const PH = PIAZZA.h, cx = PIAZZA.x, cy = PIAZZA.y;
+  // outline where the ring meets the ground, and where the south half overlaps the north
+  const edge = (o) => !o || (iv.s === 1 && o.s === -1);
+  if (edge(ringAt(X - 1, Y)) || edge(ringAt(X + 1, Y)) || edge(ringAt(X, Y - 1))) return INK;
+
+  const dx = X + 0.5 - cx;
+  const bayK = Math.floor((X - cx + 1040) / RING_BAY);
+  const house = bayK >> 1;
+  const side = iv.s === -1 ? -1 : 1;
+
+  if (Y < iv.b - PH) {
+    // the roof, one colour all the way round: outer slope lit, inner slope a
+    // shade darker, a light ridge along the middle, tile rows and dark eaves
+    if (Y >= iv.b - PH - 2) return shade(RING_ROOF, 0.62);
+    const fy = Y + PH;
+    const out = (x, y) => ell(x + 0.5, y + 0.5, cx, cy, RING_MX, RING_MY) >= 1;
+    const o = out(X, fy);
+    const ridge = out(X, fy - 1) !== o || out(X, fy + 1) !== o || out(X - 1, fy) !== o || out(X + 1, fy) !== o;
+    if (ridge) return shade(RING_ROOF, o ? 1.24 : 1.08);
+    const col = o ? RING_ROOF : RING_ROOF_IN;
+    return Y % 4 === 0 ? shade(col, 0.85) : col;
+  }
+
+  // the facade
+  const h = iv.b - Y; // height above the ground, 1..PH
+  let wall = C.facade[Math.floor(hash2(house, side + 9) * C.facade.length)];
+  if (side === 1 ? dx > 0 : dx < 0) wall = shade(wall, 0.92); // the half turned away from the light
+  if (h > PH - 3) return shade(wall, 1.12);
+  if (h === PH - 3) return shade(wall, 0.8);
+  if (h <= 2) return shade(wall, 0.62);
+  if ((X - cx + 1040) % (RING_BAY * 2) === 0) return shade(wall, 0.84); // party wall between houses
+
+  const x0 = cx - 1040 + bayK * RING_BAY;
+  const wx = X - x0;
+  const edgeAt = (x) => {
+    const d = x + 0.5 - cx;
+    if (Math.abs(d) < PASS + 2) return NaN;
+    if (side === -1) return Math.abs(d) < PIAZZA.ix - 2 ? cy - Math.round(ringInner(d)) : NaN;
+    return Math.abs(d) < PIAZZA.ox - 2 ? cy + Math.round(ringOuter(d)) : NaN;
+  };
+  // Bays close to level get a full window with shutters over a shop arch;
+  // steeper bays round the ends get a narrow window over a narrow arch.
+  // Either way they sit level on the bay's own baseline, so nothing shears.
+  const wide = Math.abs(edgeAt(x0 + 3) - edgeAt(x0 + 22)) <= 9;
+  const narrow = !wide && Math.abs(edgeAt(x0 + 9) - edgeAt(x0 + 17)) <= 7;
+  if (wide || narrow) {
+    const hb = edgeAt(x0 + 13) - Y;
+    const ar = wide ? 7 : 4, a0 = 13 - ar, a1 = 13 + ar;
+    if (wx >= a0 && wx < a1) {
+      const top = 22 + Math.sqrt(Math.max(0, ar * ar - (wx + 0.5 - 13) ** 2));
+      if (hb < top) return P(h <= 4 ? '#4a3a2e' : '#3b2a20');
+      if (hb < top + 2) return shade(wall, 0.78);
+    }
+    const s0 = wide ? 4 : 9, w0 = wide ? 8 : 10, w1 = wide ? 18 : 16, s1 = wide ? 22 : 17;
+    for (const rb of [44, 66]) {
+      const rel = hb - rb;
+      if (wx < s0 || wx >= s1) break;
+      if (rel >= -2 && rel < 0) return shade(wall, 1.15);
+      if (rel >= 0 && rel < 16) {
+        if (wx < w0 || wx >= w1) return rel % 3 === 0 ? P('#2f5236') : P('#3e6b45');
+        return rel >= 8 && rel < 15 && wx > w0 && wx < w1 - 1 ? P('#4a5d66') : P('#2f2622');
+      }
+    }
+  }
+  return h1 < 0.1 ? shade(wall, 0.95) : wall;
 }

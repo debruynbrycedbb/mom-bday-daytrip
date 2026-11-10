@@ -1,13 +1,13 @@
 // Mom's birthday day trip: the map, the travelling family, the park chase,
 // the HUD and the stop cards.
-import { buildWorld, W, H, LABELS, POOL_RECT, HILL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=4';
-import { drawCar, drawSign, drawArrow, drawLizard } from './sprites.js?v=4';
-import { STOPS } from './stops.js?v=4';
-import { createScene } from './scenes.js?v=4';
-import { createTitle } from './title.js?v=4';
-import * as sound from './sound.js?v=4';
-import { hash2, pline } from './pixel.js?v=4';
-import { createCutscene, CUT_LENGTH } from './cutscene.js?v=4';
+import { buildWorld, W, H, LABELS, POOL_RECT, HILL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=5';
+import { drawCar, drawSign, drawArrow, drawLizard } from './sprites.js?v=5';
+import { STOPS } from './stops.js?v=5';
+import { createScene } from './scenes.js?v=5';
+import { createTitle } from './title.js?v=5';
+import * as sound from './sound.js?v=5';
+import { hash2, pline } from './pixel.js?v=5';
+import { createCutscene, CUT_LENGTH } from './cutscene.js?v=5';
 
 const $ = (s) => document.querySelector(s);
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -42,6 +42,7 @@ const title = createTitle(el.titleBg);
 let world = null;
 let scale = 2, viewW = 0, viewH = 0;
 const cam = { x: 0, y: 0 };
+const chipFull = []; // stop chip widths with their names showing
 const state = {
   started: false, d: 0, targetD: 0, travelling: false, reached: 0, boost: 1,
   manual: null, cardOpen: 0, stepAcc: 0, steps: 0, mode: 'walk', carLeft: false,
@@ -65,7 +66,7 @@ function loadImage(name) {
     const img = new Image();
     img.onload = () => resolve((assets[name] = img));
     img.onerror = () => reject(new Error(`Could not load ${name}`));
-    img.src = `assets/img/${name}.png?v=4`;
+    img.src = `assets/img/${name}.png?v=5`;
   });
 }
 
@@ -700,12 +701,18 @@ function placeOverlay() {
   const key = `${cx},${cy},${scale}`;
   if (key !== lastCam) {
     lastCam = key;
+    // full chip widths, measured while the names are showing (before any writes)
+    const chipWs = stopBtns.map((b, k) => (b.classList.contains('compact') ? chipFull[k] : (chipFull[k] = b.offsetWidth)));
     world.stops.forEach((s, n) => {
       if (n === 0) return;
-      // the chip sits beside its signpost, on the side away from the path
+      // the chip sits beside its signpost, on the side away from the path;
+      // where the name won't fit on screen (small phones) it shows just the number
       const right = s.sx >= s.x;
-      const x = (s.sx - cx + (right ? 18 : -18)) * scale, y = (s.sy - cy - 28) * scale;
-      stopBtns[n - 1].style.transform = `translate(${x}px, ${y}px) translate(${right ? 0 : -100}%, -50%)`;
+      const sx = (s.sx - cx + (right ? 18 : -18)) * scale;
+      const fits = right ? sx + chipWs[n - 1] <= window.innerWidth - 8 : sx - chipWs[n - 1] >= 8;
+      stopBtns[n - 1].classList.toggle('compact', !fits);
+      const y = (s.sy - cy - 28) * scale;
+      stopBtns[n - 1].style.transform = `translate(${sx}px, ${y}px) translate(${right ? 0 : -100}%, -50%)`;
     });
     LABELS.forEach((l, k) => {
       const x = (l.x - cx) * scale, y = (l.y - cy) * scale;
