@@ -6,16 +6,38 @@
 // The ground is painted pixel by pixel in 256px tiles, made on demand.
 // Things the family can walk behind (trees, gates, lamps, café umbrellas)
 // are drawn every frame in depth order; everything else is baked into tiles.
-import { mulberry32, hash2, vnoise, bayer, hex, shade, disc, densify } from './pixel.js?v=7';
+import { mulberry32, hash2, vnoise, bayer, hex, shade, disc, densify } from './pixel.js?v=8';
 
-export const W = 1360;
-export const H = 5500;
+export const W = 2200;
+export const H = 6800;
 const CH = 256;      // tile size
 const PAD = 100;     // mask margin around a tile
 
 // ---------------------------------------------------------------- layout
 
-// The route. m:'d' = this leg is driven. stop = stop number. sign = signpost offset.
+// The Ponte del Diavolo: a tall, lopsided hump of a bridge over the Serchio.
+// x,y = west end of the deck; the deck rises `hump` pixels, highest at `apex`.
+const BRIDGE = { x: 1008, y: 3240, w: 200, hump: 52, apex: 0.38 };
+function deckY(x) {
+  const t = Math.max(0, Math.min(1, (x - BRIDGE.x) / BRIDGE.w));
+  const u = t < BRIDGE.apex ? t / BRIDGE.apex : (1 - t) / (1 - BRIDGE.apex);
+  return BRIDGE.y - Math.round(BRIDGE.hump * Math.pow(Math.sin(u * Math.PI / 2), 1.25));
+}
+// the walk up the deck to its top, and back down
+function deckWalk() {
+  const up = [0.03, 0.12, 0.22, 0.3].map((t) => BRIDGE.x + t * BRIDGE.w);
+  const top = BRIDGE.x + BRIDGE.apex * BRIDGE.w;
+  const pt = (x, extra = {}) => ({ x: Math.round(x), y: deckY(x) - 1, deck: true, ...extra });
+  return [
+    ...up.map((x) => pt(x)),
+    pt(top, { stop: 3, sign: [26, -6] }),
+    ...up.slice().reverse().map((x) => ({ ...pt(x), y: deckY(x) })),
+  ];
+}
+
+// The route. m:'d' = this leg is driven; car = the car is parked here (where a
+// drive starts or ends). stop = stop number. sign = signpost offset.
+// deck = on the Ponte del Diavolo (no path is painted under these).
 const ROUTE = [
   { x: 590, y: 196, stop: 0 },
   { x: 590, y: 260 },
@@ -57,40 +79,132 @@ const ROUTE = [
   { x: 606, y: 2130 },
   { x: 636, y: 2230 },
   { x: 620, y: 2330 },
-  { x: 600, y: 2420, board: true },
-  // the drive
+  { x: 600, y: 2420, car: true },
+  // Day 1, drive 1 (with the cutscene): down the valley to Borgo a Mozzano
   { x: 700, y: 2500, m: 'd' },
   { x: 860, y: 2580, m: 'd' },
   { x: 1000, y: 2700, m: 'd' },
-  { x: 1060, y: 2860, m: 'd' },
-  { x: 1000, y: 3000, m: 'd' },
-  { x: 900, y: 3080, m: 'd' },
-  { x: 700, y: 3170, m: 'd' },
-  { x: 460, y: 3290, m: 'd' },
-  { x: 300, y: 3460, m: 'd' },
-  { x: 280, y: 3660, m: 'd' },
-  { x: 420, y: 3830, m: 'd' },
-  { x: 620, y: 3930, m: 'd' },
-  { x: 840, y: 4020, m: 'd' },
-  { x: 980, y: 4170, m: 'd' },
-  { x: 1020, y: 4380, m: 'd' },
-  { x: 1010, y: 4560, m: 'd' },
-  { x: 1000, y: 4690, m: 'd', park: true },
-  // Bagni di Lucca on foot
-  { x: 960, y: 4780 },
-  { x: 850, y: 4846 },
-  { x: 705, y: 4860, stop: 3, sign: [-30, -2] },
-  { x: 640, y: 4950 },
-  { x: 580, y: 5060 },
-  { x: 552, y: 5160 },
-  { x: 545, y: 5215, stop: 4, sign: [-30, -2] },
+  { x: 1080, y: 2860, m: 'd' },
+  { x: 1010, y: 2990, m: 'd' },
+  { x: 880, y: 3040, m: 'd' },
+  { x: 820, y: 3130, m: 'd' },
+  { x: 870, y: 3210, m: 'd' },
+  { x: 940, y: 3236, m: 'd', car: true },
+  // up onto the Ponte del Diavolo, and back to the car
+  { x: 978, y: 3240 },
+  ...deckWalk(),
+  { x: 978, y: 3241 },
+  { x: 940, y: 3237, car: true },
+  // drive 2: across the river to Bagni di Lucca
+  { x: 900, y: 3330, m: 'd' },
+  { x: 862, y: 3460, m: 'd' },
+  { x: 900, y: 3650, m: 'd' },
+  { x: 980, y: 3900, m: 'd' },
+  { x: 1030, y: 4150, m: 'd' },
+  { x: 1030, y: 4400, m: 'd' },
+  { x: 990, y: 4620, m: 'd' },
+  { x: 920, y: 4790, m: 'd' },
+  { x: 870, y: 4826, m: 'd', car: true },
+  { x: 800, y: 4846 },
+  { x: 705, y: 4858, stop: 4, sign: [-30, -2] },
+  { x: 800, y: 4847 },
+  { x: 870, y: 4827, car: true },
+  // drive 3: further up the valley to Barga, then up its streets to the Duomo
+  { x: 940, y: 4920, m: 'd' },
+  { x: 1030, y: 5080, m: 'd' },
+  { x: 1070, y: 5280, m: 'd' },
+  { x: 1020, y: 5480, m: 'd' },
+  { x: 980, y: 5650, m: 'd' },
+  { x: 960, y: 5740, m: 'd' },
+  { x: 930, y: 5790, m: 'd', car: true },
+  { x: 885, y: 5772 },
+  { x: 845, y: 5738 },
+  { x: 805, y: 5704 },
+  { x: 772, y: 5666 },
+  { x: 746, y: 5636 },
+  { x: 704, y: 5618, stop: 5, sign: [24, -4] },
+  { x: 746, y: 5637 },
+  { x: 772, y: 5667 },
+  { x: 805, y: 5705 },
+  { x: 845, y: 5739 },
+  { x: 885, y: 5773 },
+  { x: 930, y: 5791, car: true },
+  // Day 2, drive 4: on to Castiglione di Garfagnana, in through its gate
+  { x: 990, y: 5880, m: 'd' },
+  { x: 1020, y: 6020, m: 'd' },
+  { x: 980, y: 6170, m: 'd' },
+  { x: 910, y: 6290, m: 'd' },
+  { x: 866, y: 6390, m: 'd' },
+  { x: 850, y: 6436, m: 'd', car: true },
+  { x: 800, y: 6440 },
+  { x: 770, y: 6440 },
+  { x: 740, y: 6442 },
+  { x: 700, y: 6444 },
+  { x: 662, y: 6446, stop: 6, sign: [-26, -4] },
+  { x: 700, y: 6445 },
+  { x: 740, y: 6443 },
+  { x: 770, y: 6441 },
+  { x: 800, y: 6441 },
+  { x: 850, y: 6437, car: true },
+  // drive 5 (with the cutscene): over the Apuan Alps to Pietrasanta
+  { x: 950, y: 6500, m: 'd' },
+  { x: 1120, y: 6560, m: 'd' },
+  { x: 1300, y: 6480, m: 'd' },
+  { x: 1400, y: 6300, m: 'd' },
+  { x: 1330, y: 6120, m: 'd' },
+  { x: 1460, y: 5950, m: 'd' },
+  { x: 1400, y: 5780, m: 'd' },
+  { x: 1540, y: 5620, m: 'd' },
+  { x: 1520, y: 5420, m: 'd' },
+  { x: 1640, y: 5250, m: 'd' },
+  { x: 1700, y: 5000, m: 'd' },
+  { x: 1740, y: 4750, m: 'd' },
+  { x: 1760, y: 4560, m: 'd' },
+  { x: 1762, y: 4486, m: 'd', car: true },
+  { x: 1762, y: 4440 },
+  { x: 1762, y: 4390 },
+  { x: 1762, y: 4342, stop: 7, sign: [26, -4] },
+  { x: 1762, y: 4391 },
+  { x: 1762, y: 4441 },
+  { x: 1762, y: 4487, car: true },
+  // drive 6: home to Lucca, round the east side of its walls
+  { x: 1840, y: 4470, m: 'd' },
+  { x: 1900, y: 4300, m: 'd' },
+  { x: 1900, y: 4000, m: 'd' },
+  { x: 1820, y: 3600, m: 'd' },
+  { x: 1720, y: 3200, m: 'd' },
+  { x: 1620, y: 2800, m: 'd' },
+  { x: 1540, y: 2400, m: 'd' },
+  { x: 1460, y: 2050, m: 'd' },
+  { x: 1340, y: 1700, m: 'd' },
+  { x: 1250, y: 1400, m: 'd' },
+  { x: 1200, y: 1150, m: 'd' },
+  { x: 1190, y: 1060, m: 'd' },
+  { x: 1180, y: 1024, m: 'd', car: true },
+  // and up onto Lucca's walls for the last stop
+  { x: 1130, y: 1016 },
+  { x: 1090, y: 1004 },
+  { x: 1062, y: 994 },
+  { x: 1036, y: 982, stop: 8, sign: [-26, -4] },
+];
+
+// The drives, in order: the first and the mountain pass get the cutscene
+export const DRIVES = [
+  { cut: true, caption: 'On the road to the Ponte del Diavolo' },
+  { caption: 'Driving to Bagni di Lucca' },
+  { caption: 'Driving up the valley to Barga' },
+  { caption: 'Driving to Castiglione di Garfagnana' },
+  { cut: true, sea: true, caption: 'Over the mountains to the coast' },
+  { caption: 'Driving home to Lucca' },
 ];
 
 const RIVER = [
   [1400, 2300], [1250, 2480], [1240, 2700], [1250, 2950], [1180, 3150], [1020, 3340],
   [840, 3470], [680, 3600], [580, 3780], [530, 3960], [440, 4170], [320, 4380],
-  [250, 4620], [210, 4900], [170, 5200], [150, 5560],
+  [250, 4620], [210, 4900], [170, 5200], [150, 5560], [150, 6000], [200, 6400], [260, 6900],
 ].map(([x, y]) => ({ x, y }));
+// downstream the Serchio runs out to the sea
+RIVER.unshift(...[[2260, 1760], [2000, 1840], [1800, 1940], [1600, 2080]].map(([x, y]) => ({ x, y })));
 
 // Lucca's walls: a rounded rectangle, a grassy top 56px across, 26px high
 const WALL = { cx: 590, cy: 910, hx: 470, hy: 650, r: 140 };
@@ -149,25 +263,49 @@ export const CHASE = {
 };
 
 const CARPARKS = [
-  { x: 545, y: 2404, w: 120, h: 40 },
-  { x: 945, y: 4672, w: 110, h: 40 },
+  { x: 545, y: 2404, w: 120, h: 40 },   // by Lucca's park
+  { x: 890, y: 3218, w: 100, h: 36 },   // by the Ponte del Diavolo
+  { x: 820, y: 4808, w: 110, h: 40 },   // Bagni di Lucca
+  { x: 880, y: 5772, w: 100, h: 36 },   // below Barga
+  { x: 800, y: 6418, w: 100, h: 36 },   // outside Castiglione's gate
+  { x: 1712, y: 4468, w: 100, h: 36 },  // Pietrasanta
+  { x: 1130, y: 1006, w: 100, h: 36 },  // back outside Lucca's walls
 ];
-const SPA = { x: 625, y: 4749, w: 150, roofD: 30 };
+const SPA = { x: 625, y: 4749, w: 150, roofD: 30 };   // Terme Bagno Bernabò
 const POOL = { x: 470, y: 4770, w: 100, h: 56 };
-const HILL = { x: 556, y: 5226, r: 120 };
-const PICNIC = { x: 596, y: 5168 };
-const MADDALENA = { x: 1140, y: 2790, w: 160 }; // Ponte della Maddalena
+// the birthday picnic, up on Lucca's walls (the wall top shows WALL_H above its footprint)
+const PICNIC = { x: 1014, y: 930 };
+const FINAL = { x: 1036, y: 960 };
+
+// Barga: a hill town, its streets climbing to the Duomo
+const BARGA = { x: 770, y: 5690, r: 220, duomo: { x: 694, y: 5600 } };
+// the hill's edge, wobbly rather than a perfect circle
+const bargaR = (x, y) => BARGA.r + 16 * Math.sin(Math.atan2(y - BARGA.y, x - BARGA.x) * 3 + 1) + 10 * Math.sin(Math.atan2(y - BARGA.y, x - BARGA.x) * 7);
+// Castiglione di Garfagnana: a village inside its own small ring of walls
+const CAST = { cx: 630, cy: 6440, hx: 130, hy: 92, r: 26, band: 10, h: 16, gate: { x: 760, y: 6440 } };
+// Pietrasanta: streets round Piazza del Duomo
+const PIETRA = { x: 1588, y: 4100, w: 290, h: 356 };
+const PIAZZA_PS = { x: 1690, y: 4250, w: 146, h: 152 };
+// the coast: sea to the right of this line, with a sandy beach
+const coastX = (y) => 1990 + Math.round(14 * Math.sin(y / 260) + 8 * Math.sin(y / 90));
+// the Apuan Alps, between the valley and the coast
+const inAlps = (x, y) => y > 4720 && y < 6720 && x > 1110 + 50 * Math.sin(y / 300) && x < 1690 - 70 * Math.cos(y / 240);
 
 export const LABELS = [
   { text: 'Lucca', x: 330, y: 196 },
   { text: 'Torre Guinigi', x: TOWER.x, y: TOWER.y - TOWER.h - TOWER.d - 20 },
   { text: "Piazza dell'Anfiteatro", x: PIAZZA.x + 96, y: PIAZZA.y - PIAZZA.oy - 12 },
-  { text: 'Serchio valley', x: 1120, y: 2560 },
-  { text: 'Ponte della Maddalena', x: MADDALENA.x + MADDALENA.w / 2, y: MADDALENA.y - 40 },
-  { text: 'Bagni di Lucca', x: 1090, y: 4590 },
+  { text: 'Serchio valley', x: 1330, y: 2640 },
+  { text: 'Ponte del Diavolo', x: BRIDGE.x + 168, y: BRIDGE.y - 26 },
+  { text: 'Bagni di Lucca', x: 700, y: 4710 },
+  { text: 'Barga', x: 740, y: 5500 },
+  { text: 'Castiglione di Garfagnana', x: CAST.cx, y: CAST.cy - CAST.hy - 30 },
+  { text: 'Apuan Alps', x: 1420, y: 5150 },
+  { text: 'Pietrasanta', x: 1752, y: 4120 },
+  { text: 'Versilia coast', x: 2090, y: 3700 },
 ];
 export const POOL_RECT = POOL;
-export const HILL_SPOT = HILL;
+export const FINAL_SPOT = FINAL;
 export const FOUNTAIN_SPOT = FOUNTAIN;
 
 // ---------------------------------------------------------------- shapes
@@ -187,6 +325,14 @@ const sdWall = (x, y) => {
 };
 const gateCut = (x, y) => GATES.some((g) => Math.abs(x - g.x) < 20 && y > g.n - 16 && y < g.s + 16);
 const inWall = (x, y) => sdWall(x, y) < 0 && sdRR(x, y) > -BAND && !gateCut(x, y);
+// Castiglione's walls: a small rounded rectangle, with a gate on the east side
+const sdCast = (x, y) => {
+  const qx = Math.abs(x - CAST.cx) - CAST.hx + CAST.r;
+  const qy = Math.abs(y - CAST.cy) - CAST.hy + CAST.r;
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - CAST.r;
+};
+const castGate = (x, y) => Math.abs(y - CAST.gate.y) < 11 && x > CAST.gate.x - 16 && x < CAST.gate.x + 6;
+const inCastWall = (x, y) => { const d = sdCast(x, y); return d < 0 && d > -CAST.band && !castGate(x, y); };
 const ell = (x, y, cx, cy, rx, ry) => ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
 const inRect = (X, Y, r) => X >= r.x && X < r.x + r.w && Y >= r.y && Y < r.y + r.h;
 // inside the town (clear of the wall; below the corners, clear of the ring road too)
@@ -654,23 +800,198 @@ function makePicnic() {
   return { canvas: c, x: PICNIC.x - bx, y: PICNIC.y - by };
 }
 
-function makeMaddalena() {
-  const { w } = MADDALENA;
-  const c = cv(w + 4, 60);
+// The Ponte del Diavolo, seen from the south: the deck follows deckY(), with
+// a great lopsided arch under its top and a small arch by the east bank
+function makeBridge() {
+  const { w, hump } = BRIDGE;
+  const base = hump + 6;            // canvas row of BRIDGE.y
+  const water = base + 20;          // where the piers meet the river
+  const c = cv(w + 4, water + 4);
   const g = c.getContext('2d');
-  const base = 42;
+  const arch = (t, t0, t1, rise, foot) => {
+    if (t <= t0 || t >= t1) return Infinity;
+    const a = (t - t0) / (t1 - t0);
+    return foot - Math.round(Math.sin(a * Math.PI) * rise);
+  };
   for (let i = 0; i <= w; i++) {
-    const t = i / w;
-    const hump = Math.round(Math.pow(Math.sin(Math.PI * t), 1.4) * 30);
-    const top = base - hump;
-    g.fillStyle = '#6b5a45'; g.fillRect(i + 2, top - 2, 1, 2);
-    g.fillStyle = '#c3ad8a'; g.fillRect(i + 2, top, 1, 4);
-    g.fillStyle = '#a99270'; g.fillRect(i + 2, top + 4, 1, 2);
-    const a = (t - 0.16) / 0.68;
-    const archTop = a > 0 && a < 1 ? base + 12 - Math.round(Math.sin(Math.PI * a) * 34) : base + 12;
-    if (archTop > top + 6) { g.fillStyle = '#b39c78'; g.fillRect(i + 2, top + 6, 1, archTop - top - 6); }
+    const t = i / w, x = i + 2;
+    const top = deckY(BRIDGE.x + i) - BRIDGE.y + base;
+    g.fillStyle = INKS; g.fillRect(x, top - 4, 1, 1);
+    g.fillStyle = '#d9c7a2'; g.fillRect(x, top - 3, 1, 2);                     // parapet cap
+    g.fillStyle = '#b9a27c'; g.fillRect(x, top - 1, 1, 1);
+    g.fillStyle = '#cdb894'; g.fillRect(x, top, 1, 2);                         // the deck you walk on
+    const under = Math.min(arch(t, 0.07, 0.72, hump + 16, water), arch(t, 0.77, 0.94, 12, water));
+    const bottom = Math.min(water, under);
+    for (let y = top + 2; y < bottom; y++) {
+      const course = (y - top) % 4 === 0 || (x + Math.floor((y - top) / 4) * 3) % 9 === 0;
+      g.fillStyle = course ? '#8f7b5c' : hash2(x, y) < 0.2 ? '#b39c78' : '#a99270';
+      g.fillRect(x, y, 1, 1);
+    }
+    if (under < water) { g.fillStyle = '#6b5a45'; g.fillRect(x, under - 1, 1, 1); }  // shadowed arch edge
+    if (bottom >= water) { g.fillStyle = 'rgba(30,40,60,0.35)'; g.fillRect(x, water, 1, 3); }
   }
-  return { canvas: c, x: MADDALENA.x - 2, y: MADDALENA.y - base };
+  return { canvas: c, x: BRIDGE.x - 2, y: BRIDGE.y - base };
+}
+
+// Barga's Duomo di San Cristoforo: a pale stone church with a square,
+// crenellated bell tower beside it
+function makeDuomoBarga() {
+  const c = cv(66, 78);
+  const g = c.getContext('2d');
+  const stone = (x0, y0, w, h, lit = 1) => {
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const joint = y % 4 === 0 || (x + (Math.floor(y / 4) % 2) * 3) % 7 === 0;
+        const base = joint ? [176, 164, 140] : hash2(x0 + x, y0 + y) < 0.2 ? [224, 212, 186] : [214, 201, 174];
+        g.fillStyle = rgb(shade(base, lit)); g.fillRect(x0 + x, y0 + y, 1, 1);
+      }
+  };
+  // nave: roof seen from above, then the gabled front
+  const roof = C.roof[3];
+  for (let y = 0; y < 18; y++)
+    for (let x = 1; x < 44; x++) {
+      let col = x < 22 ? shade(roof, 0.86) : roof;
+      if (x === 22) col = shade(roof, 1.2);
+      else if (y % 3 === 0) col = shade(col, 0.88);
+      g.fillStyle = rgb(col); g.fillRect(x, 18 + y, 1, 1);
+    }
+  stone(1, 36, 43, 40);
+  for (let j = 1; j <= 14; j++) {            // gable
+    const half = 21.5 * (1 - j / 15);
+    for (let x = Math.ceil(22.5 - half); x < 22.5 + half; x++) {
+      const edge = x < 22.5 - half + 2 || x >= 22.5 + half - 2;
+      g.fillStyle = edge ? '#8f7b5c' : '#d6c9ad'; g.fillRect(x, 36 - j, 1, 1);
+    }
+  }
+  g.fillStyle = '#2f2622'; disc(g, 22, 29, 2.5, '#2f2622');
+  g.fillStyle = '#7d6a4f'; g.fillRect(4, 44, 37, 1);                          // arcade line
+  for (const ax of [8, 16, 28, 36]) { g.fillStyle = '#9c8664'; g.fillRect(ax, 46, 2, 10); }
+  g.fillStyle = '#2f2622'; g.fillRect(17, 58, 11, 18);                       // the door
+  g.fillStyle = '#6b4329'; g.fillRect(18, 60, 9, 16);
+  g.fillStyle = '#2f2622'; disc(g, 22, 59, 5, '#2f2622');
+  g.fillStyle = '#6b4329'; disc(g, 22, 60, 3.5, '#6b4329');
+  // bell tower
+  stone(46, 6, 16, 70, 0.95);
+  g.fillStyle = 'rgba(0,0,0,0.14)'; g.fillRect(58, 10, 4, 66);
+  for (let k = 0; k < 4; k++) { g.fillStyle = '#cfc2a6'; g.fillRect(46 + k * 4, 2, 2, 4); }   // merlons
+  g.fillStyle = '#2f2622'; g.fillRect(49, 14, 4, 9); g.fillRect(55, 14, 4, 9);              // belfry
+  g.fillStyle = '#e8c35a'; g.fillRect(50, 19, 2, 2);
+  g.fillStyle = INKS;
+  g.fillRect(0, 18, 1, 58); g.fillRect(44, 18, 1, 58); g.fillRect(0, 76, 63, 1);
+  g.fillRect(45, 2, 1, 74); g.fillRect(62, 2, 1, 74); g.fillRect(45, 6, 18, 1);
+  return c;
+}
+
+// A square tower for Castiglione's walls (and its bigger Rocca)
+function makeCastTower(w, h, d, seed) {
+  const c = cv(w + 2, h + d + 6);
+  const g = c.getContext('2d');
+  const top = 6;
+  for (let k = 0; k < w; k += 4) { g.fillStyle = '#c6c0b4'; g.fillRect(1 + k, top - 4, 2, 4); }   // merlons
+  for (let y = 0; y < d; y++) { g.fillStyle = y === 0 ? '#d4cec3' : '#8b8478'; g.fillRect(1, top + y, w, 1); }  // walkway on top
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const joint = y % 4 === 0 || (x + (Math.floor(y / 4) % 2) * 4) % 8 === 0;
+      g.fillStyle = joint ? '#7f7a70' : hash2(x + seed, y) < 0.25 ? '#bdb7ac' : '#aea89c';
+      g.fillRect(1 + x, top + d + y, 1, 1);
+    }
+  g.fillStyle = 'rgba(0,0,0,0.16)'; g.fillRect(w - 3, top + d, 3, h);
+  g.fillStyle = '#2f2622';
+  for (let y = top + d + 6; y < top + d + h - 10; y += 14) g.fillRect(Math.round(w / 2), y, 2, 5);   // arrow slits
+  g.fillStyle = INKS;
+  g.fillRect(0, top - 4, 1, h + d + 4); g.fillRect(w + 1, top - 4, 1, h + d + 4); g.fillRect(0, top + d + h - 1, w + 2, 1);
+  return c;
+}
+
+// Pietrasanta's Duomo di San Martino: a white marble front with three doors
+// and a rose window, and its red brick bell tower
+function makeSanMartino() {
+  const c = cv(80, 96);
+  const g = c.getContext('2d');
+  const roof = C.roof[1];
+  for (let y = 0; y < 22; y++)
+    for (let x = 1; x < 59; x++) {
+      let col = x < 30 ? shade(roof, 0.86) : roof;
+      if (x === 30) col = shade(roof, 1.2);
+      else if (y % 3 === 0) col = shade(col, 0.88);
+      g.fillStyle = rgb(col); g.fillRect(x, 26 + y, 1, 1);
+    }
+  for (let y = 48; y < 94; y++)
+    for (let x = 1; x < 59; x++) {
+      const vein = Math.abs(Math.sin(x * 0.21 + y * 0.33)) < 0.05;
+      g.fillStyle = vein ? '#d9d6cf' : hash2(x, y) < 0.06 ? '#e8e5de' : '#f3f1ec';
+      g.fillRect(x, y, 1, 1);
+    }
+  for (let j = 1; j <= 16; j++) {
+    const half = 29 * (1 - j / 17);
+    for (let x = Math.ceil(30 - half); x < 30 + half; x++) {
+      const edge = x < 30 - half + 2 || x >= 30 + half - 2;
+      g.fillStyle = edge ? '#c9c4ba' : '#f3f1ec'; g.fillRect(x, 48 - j, 1, 1);
+    }
+  }
+  g.fillStyle = '#c9c4ba'; g.fillRect(1, 48, 58, 1); g.fillRect(1, 64, 58, 1);
+  disc(g, 30, 56, 6, '#8f8a80'); disc(g, 30, 56, 4.5, '#5b6f86'); disc(g, 30, 56, 1.5, '#e8c35a');
+  for (const [dx, wd, ht] of [[10, 7, 14], [26, 9, 20], [44, 7, 14]]) {
+    g.fillStyle = '#2f2622'; g.fillRect(dx, 94 - ht, wd, ht);
+    g.fillStyle = '#7d5234'; g.fillRect(dx + 1, 95 - ht, wd - 2, ht - 1);
+    g.fillStyle = '#d9d6cf'; g.fillRect(dx - 1, 93 - ht, wd + 2, 1);
+  }
+  // the bell tower, in plain red brick
+  for (let y = 0; y < 94; y++)
+    for (let x = 62; x < 78; x++) {
+      const mortar = y % 3 === 0 || (x + (Math.floor(y / 3) % 2) * 3) % 6 === 0;
+      g.fillStyle = mortar ? '#7a3f28' : hash2(x, y) < 0.3 ? '#b35d3a' : '#a65233';
+      g.fillRect(x, y, 1, 1);
+    }
+  g.fillStyle = '#2f2622'; g.fillRect(66, 8, 3, 8); g.fillRect(71, 8, 3, 8);
+  g.fillStyle = 'rgba(0,0,0,0.16)'; g.fillRect(74, 0, 4, 94);
+  g.fillStyle = INKS;
+  g.fillRect(0, 26, 1, 69); g.fillRect(59, 26, 1, 69); g.fillRect(0, 94, 60, 1);
+  g.fillRect(61, 0, 1, 95); g.fillRect(78, 0, 1, 95); g.fillRect(61, 0, 18, 1); g.fillRect(61, 94, 18, 1);
+  return c;
+}
+
+// A modern sculpture on a plinth: kind 0 standing figure, 1 a ring, 2 a
+// reclining figure; marble or bronze
+function makeStatue(kind, bronze) {
+  const c = cv(16, 26);
+  const g = c.getContext('2d');
+  const m = bronze ? ['#5a3e27', '#7d5a36', '#a77c45'] : ['#bdb8ae', '#e3e0d9', '#ffffff'];
+  g.fillStyle = 'rgba(25,20,15,0.3)'; g.fillRect(2, 24, 12, 2);
+  g.fillStyle = '#8a857b'; g.fillRect(3, 18, 10, 7);
+  g.fillStyle = '#b0aba1'; g.fillRect(3, 18, 10, 2);
+  if (kind === 0) {
+    disc(g, 8, 3, 2.5, m[1]);
+    g.fillStyle = m[1]; g.fillRect(6, 6, 4, 8); g.fillRect(6, 14, 2, 4); g.fillRect(8, 14, 2, 4);
+    g.fillStyle = m[2]; g.fillRect(6, 6, 1, 8);
+    g.fillStyle = m[0]; g.fillRect(9, 6, 1, 8); g.fillRect(4, 7, 2, 5);
+  } else if (kind === 1) {
+    for (let a = 0; a < Math.PI * 2; a += 0.08) {
+      const x = Math.round(8 + Math.cos(a) * 6), y = Math.round(10 + Math.sin(a) * 7);
+      g.fillStyle = Math.cos(a) < 0 ? m[2] : m[0]; g.fillRect(x - 1, y, 2, 2);
+    }
+  } else {
+    g.fillStyle = m[1]; g.fillRect(2, 13, 12, 5); g.fillRect(10, 9, 4, 4);
+    g.fillStyle = m[2]; g.fillRect(2, 13, 12, 1);
+    g.fillStyle = m[0]; g.fillRect(2, 17, 12, 1);
+  }
+  return c;
+}
+
+// A striped beach umbrella (Versilia's beaches are lined with them)
+function makeBeachUmbrella(col) {
+  const c = cv(11, 12);
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(25,20,15,0.25)'; g.fillRect(2, 10, 8, 2);
+  g.fillStyle = '#4a4038'; g.fillRect(5, 4, 1, 7);
+  for (let y = 0; y < 5; y++) {
+    const half = [2, 4, 5, 5, 5][y];
+    for (let x = -half; x <= half; x++) {
+      g.fillStyle = y === 4 ? '#2a1a14' : Math.floor((x + 6) / 2) % 2 ? '#fff3df' : col;
+      g.fillRect(5 + x, y, 1, 1);
+    }
+  }
+  return c;
 }
 
 function makeCypress(seed) {
@@ -769,22 +1090,33 @@ const BLOCKS = townBlocks();
 export function buildWorld(assets) {
   const r = densify(ROUTE, 1);
   const pts = r.pts;
-  for (const p of pts) p.mode = ROUTE[p.seg + 1].m === 'd' ? 'drive' : 'walk';
+  for (const p of pts) {
+    const c = ROUTE[p.seg + 1];
+    p.mode = c.m === 'd' ? 'drive' : 'walk';
+    p.deck = !!c.deck;
+  }
   const ctrl = (key) => r.ctrlD[ROUTE.findIndex((c) => c[key])];
+  // the drives: each runs from the parked car before its first 'd' point to its last
+  const legs = [];
+  ROUTE.forEach((c, i) => {
+    if (c.m !== 'd' || ROUTE[i - 1].m === 'd') return;
+    let j = i;
+    while (ROUTE[j + 1] && ROUTE[j + 1].m === 'd') j++;
+    legs.push({ i: legs.length, startD: r.ctrlD[i - 1], endD: r.ctrlD[j], start: ROUTE[i - 1], end: ROUTE[j], ...DRIVES[legs.length] });
+  });
   const stops = [];
   ROUTE.forEach((c, i) => {
     if (c.stop === undefined) return;
     const sign = c.sign || [0, 0];
     stops[c.stop] = { d: r.ctrlD[i], x: c.x, y: c.y, sx: c.x + sign[0], sy: c.y + sign[1] };
   });
-  const boardD = ctrl('board'), parkD = ctrl('park'), chaseD = ctrl('chase');
-  const boardPt = ROUTE.find((c) => c.board), parkPt = ROUTE.find((c) => c.park);
+  const chaseD = ctrl('chase');
   const river = densify(RIVER, 2).pts;
   const loop = densify(PARK_LOOP, 2).pts;
   const side = densify(PARK_SIDE, 2).pts;
   const nearRoute = polyIndex(pts);
   const nearRiver = polyIndex(river);
-  const isWalk = (p) => p.mode === 'walk' || Math.abs(p.d - boardD) < 3;
+  const isWalk = (p) => p.mode === 'walk' && !p.deck;
   const isDrive = (p) => p.mode === 'drive';
 
   const rand = mulberry32(2024);
@@ -923,11 +1255,12 @@ export function buildWorld(assets) {
       for (let k = 1; k < 4; k++) { const a = a0 + (Math.PI / 2) * (k / 4); ring.push([ccx + Math.cos(a) * R, ccy + Math.sin(a) * R]); }
     ring.forEach(([x, y], i) => {
       if (GATES.some((g) => Math.abs(x - g.x) < 60 && y > g.n - 30 && y < g.s + 30)) return;
+      if (Math.abs(x - FINAL.x) < 40 && Math.abs(y - WALL_H - FINAL.y) < 110) return; // the picnic spot
       sprites.push({ img: assets[`olive${1 + (i % 3)}`], x: Math.round(x), y: Math.round(y) - WALL_H + 3, sortY: Math.round(y) + 14, kind: 'tree' });
     });
   }
 
-  // ---- Bagni di Lucca
+  // ---- the towns along the way
   const spa = makeSpa();
   baked.push({ canvas: spa.canvas, x: spa.x, y: spa.y, sortY: spa.y + spa.canvas.height });
   occupy(SPA.x - 12, SPA.y - 12, SPA.w + 24, spa.canvas.height + 24);
@@ -935,9 +1268,8 @@ export function buildWorld(assets) {
   baked.push({ ...pool, sortY: POOL.y + POOL.h });
   occupy(POOL.x - 14, POOL.y - 14, POOL.w + 28, POOL.h + 28);
   CARPARKS.forEach((c) => occupy(c.x - 12, c.y - 12, c.w + 24, c.h + 24));
-  occupy(HILL.x - HILL.r, HILL.y - HILL.r, HILL.r * 2, HILL.r * 2);
   occupy(PARK.x - 20, PARK.y - 20, PARK.w + 40, PARK.h + 40);
-  occupy(MADDALENA.x - 14, MADDALENA.y - 50, MADDALENA.w + 28, 80);
+  occupy(BRIDGE.x - 10, BRIDGE.y - BRIDGE.hump - 20, BRIDGE.w + 20, BRIDGE.hump + 50);
   const clearOfPaths = (x, y, w, h, m = 24) => {
     for (let yy = y; yy <= y + h; yy += 8)
       for (let xx = x; xx <= x + w; xx += 8) {
@@ -946,16 +1278,73 @@ export function buildWorld(assets) {
       }
     return true;
   };
-  // the village: houses gathered along the walk to the baths
-  for (let n = 0, made = 0; n < 5000 && made < 70; n++) {
-    const w = 24 + Math.floor(rand() * 22), floors = rand() < 0.5 ? 3 : 2, roofD = 10 + Math.floor(rand() * 6);
-    const h = roofD + 22 + 16 * (floors - 1);
-    const x = 300 + Math.floor(rand() * 1000), y = 4400 + Math.floor(rand() * 900);
-    if (nearRoute(x + w / 2, y + h, 260) > 220) continue;
-    if (x + w > W - 10 || occupied(x - 8, y - 8, w + 16, h + 16) || !clearOfPaths(x, y, w, h, 6)) continue;
-    baked.push({ canvas: makeHouse(w, floors, roofD, rand(), { gable: rand() < 0.3 }), x, y, sortY: y + h });
-    occupy(x, y, w, h);
-    made++;
+  // a village: houses gathered in an area, clear of the route and each other
+  const village = (x0, y0, x1, y1, count, opts = {}) => {
+    for (let n = 0, made = 0; n < count * 60 && made < count; n++) {
+      const w = 24 + Math.floor(rand() * 20), roofD = 10 + Math.floor(rand() * 6);
+      const floors = opts.floors ? opts.floors[Math.floor(rand() * opts.floors.length)] : rand() < 0.45 ? 3 : 2;
+      const h = roofD + 22 + 16 * (floors - 1);
+      const x = x0 + Math.floor(rand() * (x1 - x0 - w)), y = y0 + Math.floor(rand() * (y1 - y0 - h));
+      const gap = opts.gap ?? 4;
+      if (occupied(x - gap, y - gap, w + gap * 2, h + gap * 2) || !clearOfPaths(x, y, w, h, opts.margin ?? 4)) continue;
+      if (opts.ok && !opts.ok(x, y, w, h)) continue;
+      const wall = opts.walls ? P(opts.walls[Math.floor(rand() * opts.walls.length)]) : undefined;
+      baked.push({ canvas: makeHouse(w, floors, roofD, rand(), { gable: rand() < 0.3, wall }), x, y, sortY: y + h });
+      occupy(x, y, w, h);
+      made++;
+    }
+  };
+  // Borgo a Mozzano, by the bridge
+  village(760, 3080, 1000, 3330, 10);
+  // Bagni di Lucca round the spa, in the woods
+  village(440, 4620, 1080, 4980, 22);
+  // Barga: stone houses on the hill below its Duomo
+  const duomo = makeDuomoBarga();
+  bakeAt(duomo, BARGA.duomo.x, BARGA.duomo.y);
+  occupy(BARGA.duomo.x - 36, BARGA.duomo.y - 80, 72, 84);
+  occupy(BARGA.duomo.x - 30, BARGA.duomo.y, 80, 24); // the terrace in front
+  const stoneWalls = ['#d6c9ad', '#cdbf9f', '#e2cfa8', '#c9b28c', '#e9c48a'];
+  village(BARGA.x - BARGA.r + 20, BARGA.y - BARGA.r + 40, BARGA.x + BARGA.r - 10, BARGA.y + BARGA.r - 40, 60,
+    { walls: stoneWalls, gap: 1, margin: 2, ok: (x, y, w, h) => Math.hypot(x + w / 2 - BARGA.x, y + h - BARGA.y) < bargaR(x + w / 2, y + h) - 26 });
+  occupy(BARGA.x - BARGA.r, BARGA.y - BARGA.r, BARGA.r * 2, BARGA.r * 2);
+  // Castiglione: towers on its walls, the Rocca, houses inside, a gatehouse to walk through
+  {
+    const { cx, cy, hx, hy } = CAST;
+    for (const [tx, ty] of [[cx - hx + 8, cy - hy + 8], [cx + hx - 8, cy - hy + 8], [cx - hx + 8, cy + hy - 4], [cx + hx - 8, cy + hy - 4]]) {
+      bakeAt(makeCastTower(14, 30, 6, tx), tx, ty);
+      occupy(tx - 10, ty - 40, 20, 44);
+    }
+    bakeAt(makeCastTower(26, 46, 12, 3), cx - hx + 34, cy + 10);                 // the Rocca
+    const gate = makeCastTower(18, 30, 6, 9);
+    sprites.push({ img: gate, x: CAST.gate.x - 4, y: CAST.gate.y + 13, kind: 'gate' }); // you walk through (and behind) it
+    const inside = (x, y, w, h) => sdCast(x, y) < -CAST.band - 2 && sdCast(x + w, y) < -CAST.band - 2 &&
+      sdCast(x, y + h) < -CAST.band - 2 && sdCast(x + w, y + h) < -CAST.band - 2;
+    const square = (x, y, w, h) => !(x < CAST.cx + 70 && x + w > CAST.cx - 10 && y < CAST.cy + 30 && y + h > CAST.cy - 30);
+    occupy(cx - hx + 20, cy - 40, 30, 60);
+    village(cx - hx, cy - hy, cx + hx, cy + hy, 22, { walls: stoneWalls, margin: 2, gap: 1, floors: [1, 2, 2], ok: (x, y, w, h) => inside(x, y, w, h) && square(x, y, w, h) });
+    occupy(cx - hx - 30, cy - hy - 40, hx * 2 + 60, hy * 2 + 70);
+  }
+  // Pietrasanta: the Duomo and its bell tower on the piazza, marble and
+  // bronze sculptures, café tables, galleries all round
+  {
+    const sm = makeSanMartino();
+    bakeAt(sm, PIAZZA_PS.x + 66, PIAZZA_PS.y + 2);
+    occupy(PIAZZA_PS.x - 4, PIAZZA_PS.y - 100, PIAZZA_PS.w + 8, PIAZZA_PS.h + 100);
+    for (const [k, sx, sy, bronze] of [[0, 1708, 4300, false], [1, 1820, 4296, false], [2, 1712, 4380, false], [0, 1818, 4378, true]]) {
+      sprites.push({ img: makeStatue(k, bronze), x: sx, y: sy, kind: 'statue' });
+    }
+    for (const [ux, uy] of [[1730, 4404], [1800, 4404]]) sprites.push({ img: umbrella, x: ux, y: uy, kind: 'umbrella' });
+    const shops = ['#f3e3c3', '#f2c9a0', '#e9c48a', '#f0d9a8', '#e7b98f'];
+    village(PIETRA.x, PIETRA.y, PIETRA.x + PIETRA.w, PIETRA.y + PIETRA.h, 44, { walls: shops, margin: 2, gap: 1 });
+    occupy(PIETRA.x - 10, PIETRA.y - 10, PIETRA.w + 20, PIETRA.h + 20);
+  }
+  // the beach: rows of striped umbrellas along the sand
+  {
+    const cols = ['#c8423a', '#2e8f7a', '#3e6b9e', '#d6872c', '#e88aa8'];
+    const brollies = cols.map(makeBeachUmbrella);
+    for (let y = 3600; y < 5000; y += 14)
+      for (let k = 0; k < 2; k++) bakeAt(brollies[Math.floor(y / 14 + k * 2) % cols.length], coastX(y) - 8 - k * 12, y);
+    occupy(1900, 0, W - 1900, H);
   }
   baked.push({ ...makePicnic(), sortY: PICNIC.y + 18 });
 
@@ -987,8 +1376,9 @@ export function buildWorld(assets) {
   const fields = [];
   const countryOk = (x, y, w, h) =>
     x > 10 && y > 10 && x + w < W - 10 && y + h < H - 10 && !occupied(x - 10, y - 10, w + 20, h + 20) &&
-    clearOfPaths(x, y, w, h, 20) && sdWall(x, y) > 90 && sdWall(x + w, y) > 90 && sdWall(x, y + h) > 90 && sdWall(x + w, y + h) > 90;
-  for (let n = 0; n < 2500 && fields.length < 30; n++) {
+    clearOfPaths(x, y, w, h, 20) && sdWall(x, y) > 90 && sdWall(x + w, y) > 90 && sdWall(x, y + h) > 90 && sdWall(x + w, y + h) > 90 &&
+    !inAlps(x, y) && !inAlps(x + w, y) && !inAlps(x, y + h) && !inAlps(x + w, y + h) && x + w < coastX(y) - 40;
+  for (let n = 0; n < 6000 && fields.length < 60; n++) {
     const w = 140 + Math.floor(rand() * 200), h = 90 + Math.floor(rand() * 120);
     const x = Math.floor(rand() * (W - w)), y = Math.floor(rand() * (H - h));
     if (!countryOk(x, y, w, h)) continue;
@@ -1000,10 +1390,10 @@ export function buildWorld(assets) {
         for (let xx = x + 22; xx <= x + w - 22; xx += 44) sprites.push({ img: assets[`olive${1 + Math.floor(rand() * 3)}`], x: xx + Math.floor(rand() * 6), y: yy, kind: 'tree' });
     }
   }
-  for (let n = 0, made = 0; n < 1500 && made < 14; n++) {
+  for (let n = 0, made = 0; n < 3000 && made < 26; n++) {
     const w = 30 + Math.floor(rand() * 16), roofD = 12, floors = rand() < 0.5 ? 2 : 1;
     const h = roofD + 22 + 16 * (floors - 1);
-    const x = Math.floor(rand() * (W - w)), y = 1700 + Math.floor(rand() * 2700);
+    const x = Math.floor(rand() * (W - w)), y = 1700 + Math.floor(rand() * 4900);
     if (!countryOk(x, y, w, h)) continue;
     baked.push({ canvas: makeHouse(w, floors, roofD, rand(), { wall: P(['#d9c7a2', '#e2cfa8', '#cdb894'][made % 3]), shop: false }), x, y, sortY: y + h });
     occupy(x - 16, y - 16, w + 32, h + 32);
@@ -1013,7 +1403,7 @@ export function buildWorld(assets) {
   const cypress = [makeCypress(1), makeCypress(7), makeCypress(13)];
   for (let i = 0; i < pts.length; i += 30) {
     const p = pts[i];
-    if (p.mode !== 'drive' || p.y < 2560 || (p.y > 3150 && p.y < 3750) || p.y > 4450) continue;
+    if (p.mode !== 'drive' || inAlps(p.x, p.y) || hash2(i, 7) < 0.45) continue;
     const tg = pts[Math.min(pts.length - 1, i + 2)];
     const tx = tg.x - p.x, ty = tg.y - p.y, L = Math.hypot(tx, ty) || 1;
     for (const s of [-1, 1]) {
@@ -1024,17 +1414,30 @@ export function buildWorld(assets) {
   }
   // free-standing trees and woods
   const treeImgs = ['tree1-m', 'tree2-m', 'tree3-m', 'tree1-l', 'tree2-l', 'tree3-l'];
-  const placed = [];
-  for (let n = 0; n < 16000 && placed.length < 1100; n++) {
+  // (a coarse grid keeps the spacing check quick over a big map)
+  const grid = new Map();
+  const cell = (x, y) => `${x >> 6},${y >> 6}`;
+  const tooClose = (x, y, dx, dy) => {
+    for (let j = -1; j <= 1; j++)
+      for (let i = -1; i <= 1; i++)
+        for (const q of grid.get(`${(x >> 6) + i},${(y >> 6) + j}`) || []) if (Math.abs(q.x - x) < dx && Math.abs(q.y - y) < dy) return true;
+    return false;
+  };
+  let count = 0;
+  for (let n = 0; n < 40000 && count < 2100; n++) {
     const x = 12 + Math.floor(rand() * (W - 24)), y = 40 + Math.floor(rand() * (H - 50));
     const forest = vnoise(x, y, 300, 9) > 0.6;
     if (!forest && rand() < 0.55) continue;
+    if (inAlps(x, y) && (alpsH(x, y) > 0.44 || rand() < 0.6)) continue; // bare rock up in the mountains
     if (occupied(x - 22, y - 58, 44, 68) || !clearOfPaths(x - 14, y - 5, 28, 10, 14)) continue; // keep the whole tree off buildings
-    if (sdWall(x, y) < 96) continue;
-    if (placed.some((q) => Math.abs(q.x - x) < (forest ? 44 : 64) && Math.abs(q.y - y) < (forest ? 26 : 40))) continue;
+    if (sdWall(x, y) < 96 || x > coastX(y) - 50) continue;
+    if (tooClose(x, y, forest ? 44 : 64, forest ? 26 : 40)) continue;
     const roll = rand();
     const img = roll < 0.18 ? cypress[Math.floor(rand() * 3)] : roll < 0.45 ? assets[`olive${1 + Math.floor(rand() * 3)}`] : assets[treeImgs[Math.floor(rand() * 6)]];
-    placed.push({ x, y });
+    const k = cell(x, y);
+    if (!grid.has(k)) grid.set(k, []);
+    grid.get(k).push({ x, y });
+    count++;
     sprites.push({ img, x, y, kind: 'tree' });
   }
 
@@ -1056,7 +1459,7 @@ export function buildWorld(assets) {
   const S = CH + PAD * 2;
   const maskCanvas = cv(S, S);
   const mg = maskCanvas.getContext('2d', { willReadFrequently: true });
-  const madd = makeMaddalena();
+  const madd = makeBridge();
 
   function strokeLine(list, width, keep) {
     mg.lineWidth = width;
@@ -1108,6 +1511,8 @@ export function buildWorld(assets) {
     const D = img.data;
     const nearWalls = sdWall(x0 + CH / 2, y0 + CH / 2) < CH + WALL_H + 20 && sdRR(x0 + CH / 2, y0 + CH / 2) > -BAND - WALL_H - CH;
     const nearRing = Math.abs(x0 + CH / 2 - PIAZZA.x) < PIAZZA.ox + CH && y0 + CH > PIAZZA.y - PIAZZA.oy - PIAZZA.h - 10 && y0 < PIAZZA.y + PIAZZA.oy + 10;
+    const nearCast = Math.abs(x0 + CH / 2 - CAST.cx) < CAST.hx + CH && Math.abs(y0 + CH / 2 - CAST.cy) < CAST.hy + CH;
+    const nearAlps = x0 + CH > 1050 && x0 < 1760 && y0 + CH > 4700 && y0 < 6740;
     const nearPark = x0 + CH > PARK.x - 4 && x0 < PARK.x + PARK.w + 4 && y0 + CH > PARK.y - PARK.hedgeH - 4 && y0 < PARK.y + PARK.h + 4;
     const hedgeF = (X, Y) => {
       const inOuter = X >= PARK.x && X < PARK.x + PARK.w && Y >= PARK.y && Y < PARK.y + PARK.h;
@@ -1155,6 +1560,21 @@ export function buildWorld(assets) {
         // 2. the oval ring of houses round the piazza
         if (!c && nearRing) c = ringPixel(X, Y, h1);
 
+        // 2b. Castiglione's walls (stone, 1.8 m high)
+        if (!c && nearCast && Math.abs(sdCast(X, Y)) < CAST.h + 2) {
+          if (inCastWall(X, Y + CAST.h)) c = (X % 4 < 2 && sdCast(X, Y + CAST.h) > -2) ? P('#d4cec3') : P('#bdb7ac');
+          else for (let t = CAST.h - 1; t >= 0; t--) {
+            if (!inCastWall(X, Y + t)) continue;
+            if (t >= CAST.h - 2) c = P('#c6c0b4');
+            else if (t < 1) c = P('#6f6a61');
+            else {
+              const joint = t % 4 === 0 || (X + (Math.floor(t / 4) % 2) * 4) % 8 === 0;
+              c = joint ? P('#7f7a70') : h1 < 0.25 ? P('#b3ada2') : P('#a39d92');
+            }
+            break;
+          }
+        }
+
         // 3. the park hedge (≈0.9 m tall)
         if (!c && nearPark) {
           if (hedgeF(X, Y + PARK.hedgeH)) c = pick(C.hedge, vnoise(X, Y, 4) + dith * 0.3);
@@ -1177,7 +1597,9 @@ export function buildWorld(assets) {
             const line = (X - p.x) % 26 < 1 && Y - p.y > 3 && Y - p.y < 18;
             c = line ? P('#f4efe2') : pick(C.gravel, h1 * 0.9);
           } else if (m(A, 0, X, Y)) {
-            c = nearPark && inParkRect(X, Y) ? pick(C.gravel, h1) : pick(C.dirt, h1);
+            // paths: gravel in the park, cobbles in the old towns, dirt elsewhere
+            const town = Math.hypot(X - BARGA.x, Y - BARGA.y) < bargaR(X, Y) || (nearCast && sdCast(X, Y) < 30) || inRect(X, Y, PIETRA);
+            c = nearPark && inParkRect(X, Y) ? pick(C.gravel, h1) : town ? (X + Y) % 5 === 0 || Y % 4 === 0 ? C.cobble[1] : C.cobble[0] : pick(C.dirt, h1);
           } else if (nearPark && m(Cm, 0, X, Y) && inParkRect(X, Y)) {
             c = pick(C.gravel, h1);
           } else if (m(A, 2, X, Y)) {
@@ -1186,6 +1608,23 @@ export function buildWorld(assets) {
             c = C.shallow[h1 < 0.5 ? 0 : 1];
           } else if (m(B, 2, X, Y)) {
             c = h1 < 0.03 ? P('#5f8a3c') : pick(C.bank, h1);
+          } else if (X >= coastX(Y) - 26) {
+            c = seaPixel(X, Y, h1, dith);
+          } else if (nearCast && sdCast(X, Y) < 0) {
+            const pave = (X + (Math.floor(Y / 4) % 2) * 3) % 6 === 0 || Y % 4 === 0;
+            c = pave ? P('#a8a092') : h1 < 0.1 ? P('#cfc6b4') : P('#c2b9a6');
+          } else if (inRect(X, Y, PIETRA)) {
+            if (inRect(X, Y, PIAZZA_PS)) c = (X - PIAZZA_PS.x) % 12 === 0 || (Y - PIAZZA_PS.y) % 12 === 0 ? P('#cfcac0') : h1 < 0.08 ? P('#e5e1d8') : P('#f0ede6');
+            else c = (X % 6 === 0 || Y % 4 === 0) ? P('#c9b99a') : h1 < 0.1 ? P('#e6d8b6') : P('#ddcdab');
+          } else if (Math.hypot(X - BARGA.x, Y - BARGA.y) < bargaR(X, Y)) {
+            // Barga's hill: gardens and terraces between the houses, and a
+            // stone terrace in front of the Duomo
+            const dd = Math.hypot(X - BARGA.x, (Y - BARGA.y) * 1.2) + vnoise(X, Y, 40, 2) * 10;
+            if (ell(X, Y, BARGA.duomo.x + 10, BARGA.duomo.y + 12, 46, 13) < 1) c = (X % 6 === 0 || Y % 4 === 0) ? P('#b8a07a') : P('#d8c4a0');
+            else if (Math.round(dd) % 18 === 0) c = shade(C.lawn[0], 0.9);
+            else c = C.lawn[h1 < 0.5 + dith * 0.4 ? 0 : 1];
+          } else if (nearAlps && inAlps(X, Y)) {
+            c = alpsPixel(X, Y, h1, dith);
           } else if (sdWall(X, Y) < 70) {
             c = C.lawn[h1 < 0.5 + dith * 0.4 ? 0 : 1];
           } else if (nearPark && inParkRect(X, Y)) {
@@ -1197,10 +1636,6 @@ export function buildWorld(assets) {
               c = C.parkLawn[Math.floor((X - PARK.x) / 16) % 2]; // mown stripes
               if (h1 < 0.05) c = shade(c, 0.88);
             }
-          } else if (Math.hypot(X - HILL.x, Y - HILL.y) < HILL.r) {
-            const dd = Math.hypot(X - HILL.x, Y - HILL.y) / HILL.r;
-            c = P(dd + dith * 0.2 > 0.82 ? '#79a84b' : '#87b656');
-            if (h1 < 0.03) c = P(['#f29bb7', '#f6d55c', '#fff7e8'][Math.floor(hash2(Y, X) * 3)]);
           } else {
             const f = tileFields.find((q) => X >= q.x && X < q.x + q.w && Y >= q.y && Y < q.y + q.h);
             if (f) c = fieldPixel(f, X, Y, h1, dith);
@@ -1289,10 +1724,11 @@ export function buildWorld(assets) {
     const a = pts[i], b = pts[Math.min(pts.length - 1, i + 1)];
     return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
   };
-  const modeAt = (d) => (d > boardD && d < parkD ? 'drive' : 'walk');
+  const legAt = (d) => legs.find((l) => d > l.startD && d < l.endD) || null;
+  const modeAt = (d) => (legAt(d) ? 'drive' : 'walk');
 
   return {
-    pts, length: L, stops, boardD, parkD, chaseD, boardPt, parkPt, at, tangent, modeAt,
+    pts, length: L, stops, legs, legAt, chaseD, at, tangent, modeAt,
     river, drawGround, prefetch, visibleSprites, chaseTree, tilesMade: () => tiles.size,
   };
 }
@@ -1485,4 +1921,32 @@ function ringPixel(X, Y, h1) {
     }
   }
   return h1 < 0.1 ? shade(wall, 0.95) : wall;
+}
+
+// The coast: sand, a darker line of wet sand, then the sea getting deeper
+function seaPixel(X, Y, h1, dith) {
+  const d = X - coastX(Y);
+  if (d < -3) return h1 < 0.08 ? P('#d9c493') : h1 > 0.95 ? P('#f3e6c4') : P('#e8d7a8');
+  if (d < 0) return P('#c9b07d');
+  if (d < 3) return (Y + Math.floor(X / 3)) % 7 < 4 ? P('#fbf7ee') : P('#9fd0e6'); // surf
+  if (d < 26) return d + dith * 8 < 14 ? P('#6aa9d4') : P('#5c9dcb');
+  const wave = (Y + Math.floor(X / 9) * 4) % 13 === 0 && h1 < 0.6;
+  return wave ? P('#7fb6dc') : d + dith * 20 < 60 ? C.water[1] : C.water[0];
+}
+
+// The Apuan Alps: a height field of ridged rock, lit from the top left, with
+// pale peaks, scrubby lower slopes and white marble quarries cut in steps
+function alpsH(x, y) {
+  const r = 1 - Math.abs(2 * vnoise(x, y, 70, 3) - 1);
+  return r * 0.65 + vnoise(x, y, 22, 8) * 0.35;
+}
+function alpsPixel(X, Y, h1, dith) {
+  const edge = Math.min(X - (1110 + 50 * Math.sin(Y / 300)), (1690 - 70 * Math.cos(Y / 240)) - X, Y - 4720, 6720 - Y);
+  if (edge + dith * 30 < 24) return pick(C.woods, vnoise(X, Y, 10, 3) + dith * 0.5); // wooded lower slopes
+  const h = alpsH(X, Y);
+  if (h > 0.5 && vnoise(X, Y, 60, 5) > 0.8) return Y % 4 === 0 ? P('#c9ccce') : h1 < 0.1 ? P('#dfe2e3') : P('#eef0f0');
+  const slope = h - alpsH(X - 2, Y - 3);
+  const v = h + dith * 0.06;
+  const base = v > 0.86 ? [236, 238, 238] : v > 0.64 ? [178, 184, 189] : v > 0.44 ? [143, 149, 155] : [104, 120, 100];
+  return shade(base, 1 + Math.max(-0.22, Math.min(0.22, slope * 7)));
 }

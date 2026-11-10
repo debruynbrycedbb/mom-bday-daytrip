@@ -1,13 +1,13 @@
 // Mom's birthday day trip: the map, the travelling family, the park chase,
 // the HUD and the stop cards.
-import { buildWorld, W, H, LABELS, POOL_RECT, HILL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=7';
-import { drawCar, drawSign, drawArrow, drawLizard, makeFamily } from './sprites.js?v=7';
-import { STOPS } from './stops.js?v=7';
-import { createScene } from './scenes.js?v=7';
-import { createTitle } from './title.js?v=7';
-import * as sound from './sound.js?v=7';
-import { hash2, pline } from './pixel.js?v=7';
-import { createCutscene, CUT_LENGTH } from './cutscene.js?v=7';
+import { buildWorld, W, H, LABELS, POOL_RECT, FINAL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=8';
+import { drawCar, drawSign, drawArrow, drawLizard, makeFamily } from './sprites.js?v=8';
+import { STOPS } from './stops.js?v=8';
+import { createScene } from './scenes.js?v=8';
+import { createTitle } from './title.js?v=8';
+import * as sound from './sound.js?v=8';
+import { hash2, pline } from './pixel.js?v=8';
+import { createCutscene, CUT_LENGTH } from './cutscene.js?v=8';
 
 const $ = (s) => document.querySelector(s);
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -19,7 +19,8 @@ const el = {
   card: $('#card'), cardKicker: $('#card-kicker'), cardTitle: $('#card-title'), cardBody: $('#card-body'),
   cardDetails: $('#card-details'), cardClose: $('#card-close'), cardReplay: $('#card-replay'), scene: $('#scene'),
   title: $('#title'), titleBg: $('#title-bg'), start: $('#start'),
-  cut: $('#cutscene'), cutCanvas: $('#cut-canvas'), cutSkip: $('#cut-skip'),
+  cut: $('#cutscene'), cutCanvas: $('#cut-canvas'), cutSkip: $('#cut-skip'), cutCaption: $('#cutscene .cut-caption'),
+  night: $('#night'), nightCanvas: $('#night-canvas'), nightLine1: $('#night-1'), nightLine2: $('#night-2'), nightSkip: $('#night-skip'),
 };
 
 const assets = {};
@@ -34,9 +35,13 @@ const IMAGES = [
 const WALK = 64;
 const DRIVE = 320;
 const DOG_RUN = 100;
-// The drive: 3 s on the road, the 7 s cutscene, then the last 3 s to the baths
+// Drives with a cutscene: 3 s on the road, the 7 s cutscene, then the last
+// stretch into the car park. Other drives take about DRIVE_TIME seconds.
 const DRIVE_BEFORE_CUT = 3;
 const DRIVE_AFTER_CUT = 850; // map pixels: about 3 s at driving speed, easing into the car park
+const DRIVE_TIME = 5;
+const NIGHT_LENGTH = 7;      // the night in Barga, between day 1 and day 2
+const DAY2_FIRST = 6;        // the first stop of day 2
 
 const mctx = el.map.getContext('2d');
 const title = createTitle(el.titleBg);
@@ -48,7 +53,7 @@ const state = {
   started: false, d: 0, targetD: 0, travelling: false, reached: 0, boost: 1,
   manual: null, cardOpen: 0, stepAcc: 0, steps: 0, mode: 'walk', carLeft: false,
   facing: { dog1: 1, dog2: -1 }, chaseDone: false, event: null,
-  driveT: 0, cut: null, cutDone: false,
+  driveT: 0, cut: null, cutLegs: new Set(), leg: null, night: null, nightDone: false,
 };
 let cutscene = null;
 let scene = null;
@@ -67,7 +72,7 @@ function loadImage(name) {
     const img = new Image();
     img.onload = () => resolve((assets[name] = img));
     img.onerror = () => reject(new Error(`Could not load ${name}`));
-    img.src = `assets/img/${name}.png?v=7`;
+    img.src = `assets/img/${name}.png?v=8`;
   });
 }
 
@@ -138,6 +143,7 @@ function onStopClick(n) {
 
 function travelTo(n) {
   if (state.cardOpen) closeCard(false);
+  if (n === DAY2_FIRST && !state.nightDone) { startNight(n); return; }
   state.travelling = true;
   state.targetD = world.stops[n].d;
   state.boost = 1;
@@ -164,7 +170,7 @@ function arrive() {
 
 function replay() {
   closeCard(false);
-  Object.assign(state, { d: 0, reached: 0, travelling: false, mode: 'walk', manual: null, chaseDone: false, event: null, driveT: 0, cutDone: false });
+  Object.assign(state, { d: 0, reached: 0, travelling: false, mode: 'walk', manual: null, chaseDone: false, event: null, driveT: 0, cutLegs: new Set(), leg: null, nightDone: false });
   sparks.length = 0;
   updateHud();
   snapCamera();
@@ -198,10 +204,14 @@ function updateHud() {
     b.setAttribute('aria-label', `Stop ${n}: ${STOPS[k].chip} (${what})`);
   });
   el.go.disabled = false;
-  if (state.cut) {
+  if (state.night) {
+    el.go.textContent = 'Good night…';
+    el.go.disabled = true;
+    setStatus('Night falls in Barga');
+  } else if (state.cut) {
     el.go.textContent = 'On the road…';
     el.go.disabled = true;
-    setStatus('On the road to Bagni di Lucca');
+    setStatus(state.cut.leg.caption);
   } else if (state.event) {
     el.go.textContent = 'Woof!';
     el.go.disabled = true;
@@ -209,13 +219,13 @@ function updateHud() {
   } else if (state.travelling) {
     el.go.textContent = state.boost > 1 ? 'Hurrying…' : 'Speed up';
     el.go.disabled = state.boost > 1;
-    setStatus(state.mode === 'drive' ? 'Driving…' : 'Walking…');
+    setStatus(state.mode === 'drive' ? (state.leg ? `${state.leg.caption}…` : 'Driving…') : 'Walking…');
   } else if (state.reached < LAST) {
     el.go.textContent = STOPS[state.reached].go;
     setStatus(state.reached === 0 ? 'Tap the glowing signpost or the button to set off.' : `Next stop: ${STOPS[state.reached].chip}`);
   } else {
-    el.go.textContent = 'Replay the day';
-    setStatus('That’s the whole day. Happy birthday, Mom!');
+    el.go.textContent = 'Replay the trip';
+    setStatus('That’s the whole trip. Happy birthday, Mom!');
   }
 }
 
@@ -272,8 +282,12 @@ function trapFocus(e) {
 
 // Where everyone stands for a given distance along the path
 function formation(d) {
-  const lo = d >= world.parkD ? world.parkD : -Infinity;
-  const hi = d <= world.boardD ? world.boardD : Infinity;
+  // keep everyone on this walk: between the end of the last drive and the start of the next
+  let lo = -Infinity, hi = Infinity;
+  for (const l of world.legs) {
+    if (l.endD <= d + 0.01) lo = Math.max(lo, l.endD);
+    if (l.startD >= d - 0.01) hi = Math.min(hi, l.startD);
+  }
   const clampD = (v) => Math.max(lo, Math.min(hi, v));
   const pos = (dd, off) => {
     const c = clampD(dd);
@@ -389,9 +403,11 @@ function bubbleText() {
 
 // ---------------------------------------------------------------- the drive cutscene
 
-function startCut() {
-  state.cut = { t: 0 };
-  cutscene = createCutscene(el.cutCanvas, assets, { reduced, onBark: (dog) => sound.bark(dog) });
+function startCut(leg) {
+  state.cut = { t: 0, leg };
+  cutscene = createCutscene(el.cutCanvas, assets, { reduced, sea: !!leg.sea, onBark: (dog) => sound.bark(dog) });
+  el.cutCaption.textContent = leg.caption;
+  el.cut.setAttribute('aria-label', leg.caption);
   sound.windOn(true);
   el.cut.hidden = false;
   document.body.classList.add('cut-on');
@@ -401,12 +417,13 @@ function startCut() {
 
 function endCut() {
   if (!state.cut) return;
+  const { leg } = state.cut;
   state.cut = null;
   cutscene = null;
-  state.cutDone = true;
+  state.cutLegs.add(leg.i);
   sound.windOn(false);
-  // time has passed on the road: pick the drive up near the end
-  state.d = Math.max(state.d, world.parkD - DRIVE_AFTER_CUT);
+  // time has passed on the road: pick the drive up near its end
+  state.d = Math.max(state.d, leg.endD - DRIVE_AFTER_CUT);
   snapCamera();
   el.cut.hidden = true;
   document.body.classList.remove('cut-on');
@@ -418,23 +435,136 @@ function updateCut(dt) {
   state.cut.t += dt;
   cutscene.frame(state.cut.t);
   // meanwhile, paint the map where the drive picks up again
-  const p = world.at(world.parkD - DRIVE_AFTER_CUT);
+  const p = world.at(state.cut.leg.endD - DRIVE_AFTER_CUT);
   world.prefetch(p.x, p.y, Math.max(viewW, viewH));
   if (state.cut.t >= CUT_LENGTH) endCut();
 }
+
+// ---------------------------------------------------------------- the night in Barga
+// A short interlude between the days: the sky over Barga darkens, windows
+// light up and stars come out; then dawn breaks on day 2 and the trip goes on.
+
+let nightArt = null;
+function startNight(next) {
+  state.night = { t: 0, next };
+  el.nightCanvas.width = 320;
+  el.nightCanvas.height = 180;
+  nightArt = makeNightArt();
+  el.night.hidden = false;
+  el.night.style.opacity = '0';
+  document.body.classList.add('cut-on');
+  updateHud();
+  sound.blip();
+  el.nightSkip.focus({ preventScroll: true });
+}
+
+function endNight() {
+  if (!state.night) return;
+  const { next } = state.night;
+  state.night = null;
+  state.nightDone = true;
+  el.night.hidden = true;
+  document.body.classList.remove('cut-on');
+  sound.arrive();
+  travelTo(next);
+}
+
+function updateNight(dt) {
+  const n = state.night;
+  n.t += reduced ? NIGHT_LENGTH : dt;
+  const t = n.t;
+  const fade = Math.min(1, t / 0.8, (NIGHT_LENGTH - t) / 0.8);
+  el.night.style.opacity = String(Math.max(0, fade));
+  const day2 = t > 3.7;
+  const l1 = day2 ? 'Day 2' : 'Night falls in Barga';
+  const l2 = day2 ? 'Mountain heritage and Versilia art' : 'Dinner in the old town, then a good night’s sleep';
+  if (el.nightLine1.textContent !== l1) el.nightLine1.textContent = l1;
+  if (el.nightLine2.textContent !== l2) el.nightLine2.textContent = l2;
+  drawNight(t);
+  if (t >= NIGHT_LENGTH) endNight();
+}
+
+// the skyline of Barga, made once: hills, houses and the Duomo on top
+function makeNightArt() {
+  const w = 320, h = 180;
+  const houses = [];
+  let seed = 3;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let k = 0; k < 26; k++) {
+    const x = 70 + rnd() * 180, base = 150 - Math.max(0, 40 - Math.abs(x - 160) * 0.45);
+    houses.push({ x: Math.round(x), y: Math.round(base - rnd() * 6), w: 10 + Math.round(rnd() * 10), h: 10 + Math.round(rnd() * 12), lit: rnd(), ph: rnd() * 6 });
+  }
+  houses.sort((a, b) => a.y - b.y);
+  return { w, h, houses };
+}
+
+function drawNight(t) {
+  const g = el.nightCanvas.getContext('2d');
+  const { w, h, houses } = nightArt;
+  // the sky: dusk, deep night, then dawn
+  const dawn = Math.max(0, Math.min(1, (t - 3.9) / 2));
+  const nightSky = ['#0b1430', '#132049', '#1e2f5e', '#2b3f6e'];
+  const dawnSky = ['#4b5e9a', '#c47a8a', '#f2a66b', '#ffd38a'];
+  for (let y = 0; y < 130; y++) {
+    const k = Math.min(3, Math.floor((y / 130) * 4));
+    const a = hexRgb(nightSky[k]), b = hexRgb(dawnSky[k]);
+    g.fillStyle = `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * dawn)).join(',')})`;
+    g.fillRect(0, y, w, 1);
+  }
+  // stars and the moon, fading at dawn
+  for (let k = 0; k < 60; k++) {
+    const x = (k * 97) % w, y = (k * 53) % 110;
+    if ((Math.floor(t * 3 + k) % 7 === 0) || hash2(k, 1) < dawn) continue;
+    g.fillStyle = k % 9 === 0 ? '#ffe9b0' : '#e8eefc';
+    g.fillRect(x, y, 1, 1);
+  }
+  if (dawn < 1) {
+    g.globalAlpha = 1 - dawn;
+    g.fillStyle = '#f4efd8'; g.beginPath(); g.arc(248, 34, 9, 0, Math.PI * 2); g.fill();
+    g.fillStyle = nightSky[0]; g.beginPath(); g.arc(252, 31, 8, 0, Math.PI * 2); g.fill();
+    g.globalAlpha = 1;
+  }
+  if (dawn > 0) { g.fillStyle = '#ffe39a'; g.beginPath(); g.arc(60, 132 - dawn * 22, 12, 0, Math.PI * 2); g.fill(); }
+  // mountains, then Barga's hill
+  const mix = (a, b) => { const x = hexRgb(a), y = hexRgb(b); return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * dawn)).join(',')})`; };
+  g.fillStyle = mix('#1b2546', '#6a5a7d');
+  for (let x = 0; x < w; x++) { const y = Math.round(118 - 26 * Math.abs(Math.sin(x * 0.021 + 1.3)) - 10 * Math.sin(x * 0.06)); g.fillRect(x, y, 1, h - y); }
+  g.fillStyle = mix('#141c33', '#3f5546');
+  for (let x = 0; x < w; x++) { const y = Math.round(150 - Math.max(0, 46 - Math.abs(x - 160) * 0.42)); g.fillRect(x, y, 1, h - y); }
+  // the houses, their windows lit through the night
+  for (const hs of houses) {
+    g.fillStyle = mix('#0e1428', '#5b4a43');
+    g.fillRect(hs.x, hs.y - hs.h, hs.w, hs.h);
+    g.fillStyle = mix('#1a1f33', '#8a4a33');
+    g.fillRect(hs.x - 1, hs.y - hs.h - 3, hs.w + 2, 3);
+    const on = dawn < 0.7 && (hs.lit < 0.7 || Math.floor(t * 0.8 + hs.ph) % 3);
+    if (on) { g.fillStyle = '#ffd36b'; g.fillRect(hs.x + 3, hs.y - hs.h + 4, 2, 3); if (hs.w > 14) g.fillRect(hs.x + hs.w - 5, hs.y - hs.h + 4, 2, 3); }
+  }
+  // the Duomo and its bell tower on top
+  g.fillStyle = mix('#0e1428', '#7d6a58');
+  g.fillRect(140, 86, 34, 22); g.fillRect(176, 66, 12, 42);
+  for (let j = 0; j < 9; j++) g.fillRect(140 + j * 2, 86 - j, 34 - j * 4, 1);
+  for (let k = 0; k < 3; k++) g.fillRect(176 + k * 5, 62, 2, 4);
+  if (dawn < 0.7) { g.fillStyle = '#ffcf6a'; g.fillRect(180, 72, 4, 5); }
+}
+const hexRgb = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
 
 // ---------------------------------------------------------------- update
 
 function update(dt) {
   if (state.event) updateChase(dt);
   else if (state.travelling) {
-    const mode = world.modeAt(state.d + 0.5);
-    if (mode !== state.mode) {
+    const leg = world.legAt(state.d + 0.5);
+    const mode = leg ? 'drive' : 'walk';
+    if (mode !== state.mode || leg !== state.leg) {
+      if (leg && leg !== state.leg) state.driveT = 0;
       state.mode = mode;
+      state.leg = leg;
       sound.engineOn(mode === 'drive');
       updateHud();
     }
-    const base = mode === 'drive' ? DRIVE : WALK;
+    // a drive with a cutscene goes at road speed; the others take about DRIVE_TIME
+    const base = !leg ? WALK : leg.cut ? DRIVE : Math.max(DRIVE, (leg.endD - leg.startD) / DRIVE_TIME);
     const remain = state.targetD - state.d;
     const ease = Math.max(0.3, Math.min(1, remain / (mode === 'drive' ? 160 : 30)));
     const v = base * ease * state.boost * (reduced ? 3 : 1);
@@ -444,9 +574,9 @@ function update(dt) {
       state.d = world.chaseD;
       startChase();
     }
-    if (mode === 'drive' && !state.cutDone) {
+    if (leg && leg.cut && !state.cutLegs.has(leg.i)) {
       state.driveT += dt;
-      if (state.driveT >= DRIVE_BEFORE_CUT) startCut();
+      if (state.driveT >= DRIVE_BEFORE_CUT) startCut(leg);
     }
     if (mode === 'walk') {
       state.stepAcc += state.d - before;
@@ -618,9 +748,16 @@ function partyThings(things) {
     return;
   }
 
-  // the parked car
-  if (d <= world.boardD) things.push({ y: world.boardPt.y, draw: () => drawCar(g, world.boardPt.x, world.boardPt.y, false, 0, null) });
-  else if (d >= world.parkD) things.push({ y: world.parkPt.y, draw: () => drawCar(g, world.parkPt.x, world.parkPt.y, true, 0, null) });
+  // the parked car: where the last drive ended, or else where the next one starts
+  {
+    let car = null, left = false;
+    for (const l of world.legs) if (l.endD <= d + 0.01) { car = l.end; left = world.tangent(l.endD - 4).x < 0; }
+    if (!car) {
+      const next = world.legs.find((l) => l.startD >= d - 0.01);
+      if (next) { car = next.start; left = world.tangent(next.startD + 4).x < 0; }
+    }
+    if (car) things.push({ y: car.y, draw: () => drawCar(g, car.x, car.y, left, 0, null) });
+  }
 
   const f = formation(d);
   const ev = state.event;
@@ -684,7 +821,7 @@ function drawFireworks(g, cx, cy) {
   if (nextBurst <= 0) {
     nextBurst = 0.8;
     const cols = ['#ffd34d', '#ff7a8a', '#8fe3ff', '#ffffff', '#b4ff8a'];
-    const x = HILL_SPOT.x - 140 + Math.random() * 280, y = HILL_SPOT.y - 200 + Math.random() * 70;
+    const x = FINAL_SPOT.x - 140 + Math.random() * 280, y = FINAL_SPOT.y - 200 + Math.random() * 70;
     const c = cols[Math.floor(Math.random() * cols.length)];
     for (let k = 0; k < 24; k++) {
       const a = (k / 24) * Math.PI * 2;
@@ -752,7 +889,11 @@ function frame(now) {
   if (!el.title.hidden && !reduced) title.frame(t);
   if (world && state.started) {
     if (state.cut) updateCut(dt);
-    else {
+    else if (state.night) {
+      updateNight(dt);
+      drawMap();
+      placeOverlay();
+    } else {
       update(dt);
       drawMap();
       placeOverlay();
@@ -772,6 +913,7 @@ function bindInput() {
   el.card.addEventListener('keydown', trapFocus);
   el.recenter.addEventListener('click', () => { state.manual = null; el.recenter.hidden = true; });
   el.cutSkip.addEventListener('click', endCut);
+  el.nightSkip.addEventListener('click', () => { if (state.night) state.night.t = NIGHT_LENGTH; });
 
   let soundPref = false;
   try { soundPref = localStorage.getItem('momtrip:sound') === 'on'; } catch { /* storage unavailable */ }
@@ -850,6 +992,7 @@ async function init() {
     return;
   }
   fam = makeFamily();
+  assets.fam = fam; // the stop scenes draw the family too
   world = buildWorld(assets);
   buildOverlay();
   updateHud();
@@ -857,7 +1000,7 @@ async function init() {
   // paint the opening view now so the map is ready when the title lifts
   world.drawGround(mctx, Math.round(cam.x), Math.round(cam.y), viewW, viewH, 12);
   el.start.disabled = false;
-  el.start.textContent = 'Start the day';
+  el.start.textContent = 'Start the trip';
 
   // ?debug: jump straight to a stop while testing, e.g. __trip.jump(3)
   if (new URLSearchParams(location.search).has('debug')) {
@@ -866,30 +1009,38 @@ async function init() {
       get scene() { return scene; },
       jump(n) {
         closeCard(false);
+        if (state.night) { state.night = null; el.night.hidden = true; }
         state.travelling = false;
         state.event = null;
         state.reached = n;
         state.d = world.stops[n].d;
         state.chaseDone = state.d > world.chaseD;
-        state.cutDone = state.d > world.boardD;
+        state.cutLegs = new Set(world.legs.filter((l) => l.endD < state.d).map((l) => l.i));
+        state.nightDone = n >= DAY2_FIRST;
         state.driveT = 0;
+        state.leg = null;
         state.mode = world.modeAt(state.d);
         updateHud();
         snapCamera();
         if (n > 0) openCard(n);
       },
       freeze(on = true) { frozen = on; },
-      // stand by the car and set off on the drive
-      drive() {
+      // stand by the car before drive i (0-5) and set off
+      drive(i = 0) {
         closeCard(false);
-        Object.assign(state, { reached: 2, d: world.boardD - 40, chaseDone: true, cutDone: false, driveT: 0, event: null });
+        const leg = world.legs[i];
+        const reached = world.stops.filter((st) => st.d < leg.startD).length - 1;
+        Object.assign(state, { reached, d: leg.startD - 20, chaseDone: true, driveT: 0, event: null, nightDone: i >= 3 });
+        state.cutLegs = new Set(world.legs.filter((l) => l.i < i).map((l) => l.i));
         snapCamera();
-        travelTo(3);
+        travelTo(reached + 1);
       },
+      // the night in Barga, then on to day 2
+      night() { this.jump(5); closeCard(false); state.nightDone = false; travelTo(DAY2_FIRST); },
       // jump into the chase at a given moment (seconds), e.g. __trip.chase(6)
       chase(at = 0) {
         closeCard(false);
-        Object.assign(state, { reached: 2, d: world.chaseD, travelling: true, targetD: world.stops[3].d, chaseDone: false, mode: 'walk' });
+        Object.assign(state, { reached: 2, d: world.chaseD, travelling: true, targetD: world.stops[3].d, chaseDone: false, mode: 'walk', leg: null });
         startChase();
         state.event.t = at;
         state.event.woof = WOOFS.filter((w) => w < at).length;

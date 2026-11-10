@@ -2,7 +2,7 @@
 // countryside can stream past, the car can bump along the road, Mom and Dad
 // can bob, and the dogs can bounce about the back seat, turn to look out of
 // each side and bark at the view. The dogs always stay inside the car.
-import { bayer, hash2, disc, drawArt } from './pixel.js?v=7';
+import { bayer, hash2, disc, drawArt } from './pixel.js?v=8';
 
 export const CUT_LENGTH = 7; // seconds
 
@@ -122,7 +122,8 @@ function cloud(rand) {
   return c;
 }
 
-export function createCutscene(canvas, assets, { reduced = false, onBark = () => {} } = {}) {
+// sea: the drive over the Apuan Alps, with marble peaks and the sea coming into view
+export function createCutscene(canvas, assets, { reduced = false, sea = false, onBark = () => {} } = {}) {
   canvas.width = W;
   canvas.height = H;
   const g = canvas.getContext('2d');
@@ -166,10 +167,21 @@ export function createCutscene(canvas, assets, { reduced = false, onBark = () =>
     }
     // far hills (slow), then furrowed fields following the slope (faster)
     const far = Math.round(t * 12), mid = Math.round(t * 46);
+    // over the mountains: the sea rises into view on the horizon
+    const seaTop = sea ? 112 - Math.min(16, Math.max(0, Math.round((t - 2) * 5))) : 112;
     for (let x = 0; x < W; x++) {
-      const y1 = ridge(x + far, 104, 22, 0.018, 1);
-      g.fillStyle = '#8fb3a2'; g.fillRect(x, y1, 1, 112 - y1);
-      g.fillStyle = '#7fa494'; g.fillRect(x, y1, 1, 1);
+      const y1 = sea ? ridge(x + far, 100, 40, 0.026, 3) : ridge(x + far, 104, 22, 0.018, 1);
+      if (sea) {
+        g.fillStyle = '#9aa3ad'; g.fillRect(x, y1, 1, 112 - y1);
+        g.fillStyle = '#eef0f0'; g.fillRect(x, y1, 1, Math.max(1, Math.round((104 - y1) * 0.35))); // marble and snow on the peaks
+        if (seaTop < 112 && y1 < seaTop) {
+          g.fillStyle = '#4f9fd0'; g.fillRect(x, seaTop, 1, 112 - seaTop);
+          if ((x * 7 + Math.floor(t * 6)) % 23 === 0) { g.fillStyle = '#e8f6ff'; g.fillRect(x, seaTop + 2 + (x % 5), 2, 1); }
+        }
+      } else {
+        g.fillStyle = '#8fb3a2'; g.fillRect(x, y1, 1, 112 - y1);
+        g.fillStyle = '#7fa494'; g.fillRect(x, y1, 1, 1);
+      }
       const y2 = ridge(x + mid, 122, 18, 0.024, 4);
       g.fillStyle = '#c6d77a'; g.fillRect(x, y2, 1, 1);
       for (let y = y2 + 1, k = 0; y < 200; y += 6, k++) {
