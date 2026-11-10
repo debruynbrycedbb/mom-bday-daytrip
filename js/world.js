@@ -6,7 +6,7 @@
 // The ground is painted pixel by pixel in 256px tiles, made on demand.
 // Tall things the family can walk behind (trees, gates, lamps) are drawn
 // every frame in depth order; everything else is baked into the tiles.
-import { mulberry32, hash2, vnoise, bayer, hex, shade, disc, densify } from './pixel.js?v=2';
+import { mulberry32, hash2, vnoise, bayer, hex, shade, disc, densify } from './pixel.js?v=3';
 
 export const W = 1360;
 export const H = 5500;
@@ -48,7 +48,7 @@ const ROUTE = [
   { x: 1000, y: 2700, m: 'd' },
   { x: 1060, y: 2860, m: 'd' },
   { x: 1000, y: 3000, m: 'd' },
-  { x: 900, y: 3080, m: 'd', stop: 3, sign: [40, 70] },
+  { x: 900, y: 3080, m: 'd' },
   { x: 700, y: 3170, m: 'd' },
   { x: 460, y: 3290, m: 'd' },
   { x: 300, y: 3460, m: 'd' },
@@ -63,11 +63,11 @@ const ROUTE = [
   // Bagni di Lucca on foot
   { x: 960, y: 4780 },
   { x: 850, y: 4846 },
-  { x: 705, y: 4860, stop: 4, sign: [-72, -2] },
+  { x: 705, y: 4860, stop: 3, sign: [-72, -2] },
   { x: 640, y: 4950 },
   { x: 580, y: 5060 },
   { x: 552, y: 5160 },
-  { x: 545, y: 5215, stop: 5, sign: [-74, -2] },
+  { x: 545, y: 5215, stop: 4, sign: [-74, -2] },
 ];
 
 const RIVER = [

@@ -366,6 +366,38 @@ body.card-open .hud { visibility: hidden; }
   padding: 0 0.15em;
 }
 
+/* ------------------------------------------------------------ the drive cutscene */
+
+.cutscene {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: var(--ink);
+}
+.cutscene canvas {
+  width: min(100vw, calc((100dvh - 120px) * 16 / 9));
+  aspect-ratio: 16 / 9;
+  height: auto;
+}
+.cut-caption {
+  margin: 0;
+  padding: 0 16px;
+  font: 700 1.15rem/1.2 var(--font);
+  color: var(--cream);
+  text-align: center;
+}
+.cut-skip {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+}
+body.cut-on .hud, body.cut-on .top-hud, body.cut-on .overlay { visibility: hidden; }
+
 /* ------------------------------------------------------------ title screen */
 
 .title-screen {

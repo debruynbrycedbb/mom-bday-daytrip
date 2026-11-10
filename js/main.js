@@ -1,12 +1,13 @@
 // Mom's birthday day trip: the map, the travelling family, the park chase,
 // the HUD and the stop cards.
-import { buildWorld, W, H, LABELS, POOL_RECT, HILL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=2';
-import { drawCar, drawSign, drawArrow, drawLizard } from './sprites.js?v=2';
-import { STOPS } from './stops.js?v=2';
-import { createScene } from './scenes.js?v=2';
-import { createTitle } from './title.js?v=2';
-import * as sound from './sound.js?v=2';
-import { hash2, pline } from './pixel.js?v=2';
+import { buildWorld, W, H, LABELS, POOL_RECT, HILL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=3';
+import { drawCar, drawSign, drawArrow, drawLizard } from './sprites.js?v=3';
+import { STOPS } from './stops.js?v=3';
+import { createScene } from './scenes.js?v=3';
+import { createTitle } from './title.js?v=3';
+import * as sound from './sound.js?v=3';
+import { hash2, pline } from './pixel.js?v=3';
+import { createCutscene, CUT_LENGTH } from './cutscene.js?v=3';
 
 const $ = (s) => document.querySelector(s);
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -18,11 +19,13 @@ const el = {
   card: $('#card'), cardKicker: $('#card-kicker'), cardTitle: $('#card-title'), cardBody: $('#card-body'),
   cardDetails: $('#card-details'), cardClose: $('#card-close'), cardReplay: $('#card-replay'), scene: $('#scene'),
   title: $('#title'), titleBg: $('#title-bg'), start: $('#start'),
+  cut: $('#cutscene'), cutCanvas: $('#cut-canvas'), cutSkip: $('#cut-skip'),
 };
 
 const assets = {};
 const IMAGES = [
-  'mom-map', 'dad-map', 'dog1-map', 'dog2-map', 'scene-street', 'scene-square', 'scene-drive', 'scene-baths',
+  'mom-map', 'dad-map', 'dog1-map', 'dog2-map', 'scene-street', 'scene-square', 'scene-baths',
+  'cut-car', 'cut-front', 'cut-mom', 'cut-dad', 'cut-dog1', 'cut-dog2', 'cut-dog1-side', 'cut-dog2-side',
   'tree1-l', 'tree2-l', 'tree3-l', 'tree1-m', 'tree2-m', 'tree3-m', 'olive1', 'olive2', 'olive3',
 ];
 
@@ -30,6 +33,9 @@ const IMAGES = [
 const WALK = 72;
 const DRIVE = 320;
 const DOG_RUN = 170;
+// The drive: 3 s on the road, the 7 s cutscene, then the last 3 s to the baths
+const DRIVE_BEFORE_CUT = 3;
+const DRIVE_AFTER_CUT = 850; // map pixels: about 3 s at driving speed, easing into the car park
 
 const mctx = el.map.getContext('2d');
 const title = createTitle(el.titleBg);
@@ -40,7 +46,9 @@ const state = {
   started: false, d: 0, targetD: 0, travelling: false, reached: 0, boost: 1,
   manual: null, cardOpen: 0, stepAcc: 0, steps: 0, mode: 'walk', carLeft: false,
   facing: { dog1: 1, dog2: -1 }, chaseDone: false, event: null,
+  driveT: 0, cut: null, cutDone: false,
 };
+let cutscene = null;
 let scene = null;
 let t = 0;
 let last = performance.now();
@@ -57,7 +65,7 @@ function loadImage(name) {
     const img = new Image();
     img.onload = () => resolve((assets[name] = img));
     img.onerror = () => reject(new Error(`Could not load ${name}`));
-    img.src = `assets/img/${name}.png?v=2`;
+    img.src = `assets/img/${name}.png?v=3`;
   });
 }
 
@@ -146,7 +154,7 @@ function arrive() {
   state.reached += 1;
   const n = state.reached;
   sound.arrive();
-  if (n === 4) sound.splash();
+  if (STOPS[n - 1].scene === 'baths') sound.splash();
   if (n === LAST) sound.birthday();
   updateHud();
   window.setTimeout(() => openCard(n), reduced ? 80 : 550);
@@ -154,7 +162,7 @@ function arrive() {
 
 function replay() {
   closeCard(false);
-  Object.assign(state, { d: 0, reached: 0, travelling: false, mode: 'walk', manual: null, chaseDone: false, event: null });
+  Object.assign(state, { d: 0, reached: 0, travelling: false, mode: 'walk', manual: null, chaseDone: false, event: null, driveT: 0, cutDone: false });
   sparks.length = 0;
   updateHud();
   snapCamera();
@@ -188,7 +196,11 @@ function updateHud() {
     b.setAttribute('aria-label', `Stop ${n}: ${STOPS[k].chip} (${what})`);
   });
   el.go.disabled = false;
-  if (state.event) {
+  if (state.cut) {
+    el.go.textContent = 'On the road…';
+    el.go.disabled = true;
+    setStatus('On the road to Bagni di Lucca');
+  } else if (state.event) {
     el.go.textContent = 'Woof!';
     el.go.disabled = true;
     setStatus('[Dog 2’s name] has spotted a lizard!');
@@ -373,6 +385,40 @@ function bubbleText() {
   return null;
 }
 
+// ---------------------------------------------------------------- the drive cutscene
+
+function startCut() {
+  state.cut = { t: 0 };
+  cutscene = createCutscene(el.cutCanvas, assets, { reduced, onYip: () => sound.bark() });
+  el.cut.hidden = false;
+  document.body.classList.add('cut-on');
+  updateHud();
+  el.cutSkip.focus({ preventScroll: true });
+}
+
+function endCut() {
+  if (!state.cut) return;
+  state.cut = null;
+  cutscene = null;
+  state.cutDone = true;
+  // time has passed on the road: pick the drive up near the end
+  state.d = Math.max(state.d, world.parkD - DRIVE_AFTER_CUT);
+  snapCamera();
+  el.cut.hidden = true;
+  document.body.classList.remove('cut-on');
+  updateHud();
+  el.go.focus({ preventScroll: true });
+}
+
+function updateCut(dt) {
+  state.cut.t += dt;
+  cutscene.frame(state.cut.t);
+  // meanwhile, paint the map where the drive picks up again
+  const p = world.at(world.parkD - DRIVE_AFTER_CUT);
+  world.prefetch(p.x, p.y, Math.max(viewW, viewH));
+  if (state.cut.t >= CUT_LENGTH) endCut();
+}
+
 // ---------------------------------------------------------------- update
 
 function update(dt) {
@@ -393,6 +439,10 @@ function update(dt) {
     if (!state.chaseDone && before < world.chaseD && state.d >= world.chaseD) {
       state.d = world.chaseD;
       startChase();
+    }
+    if (mode === 'drive' && !state.cutDone) {
+      state.driveT += dt;
+      if (state.driveT >= DRIVE_BEFORE_CUT) startCut();
     }
     if (mode === 'walk') {
       state.stepAcc += state.d - before;
@@ -681,9 +731,12 @@ function frame(now) {
   t += dt;
   if (!el.title.hidden && !reduced) title.frame(t);
   if (world && state.started) {
-    update(dt);
-    drawMap();
-    placeOverlay();
+    if (state.cut) updateCut(dt);
+    else {
+      update(dt);
+      drawMap();
+      placeOverlay();
+    }
   } else if (world) {
     world.prefetch(world.at(0).x, world.at(0).y, 700); // get the start ready behind the title
   }
@@ -698,6 +751,7 @@ function bindInput() {
   el.cardReplay.addEventListener('click', replay);
   el.card.addEventListener('keydown', trapFocus);
   el.recenter.addEventListener('click', () => { state.manual = null; el.recenter.hidden = true; });
+  el.cutSkip.addEventListener('click', endCut);
 
   let soundPref = false;
   try { soundPref = localStorage.getItem('momtrip:sound') === 'on'; } catch { /* storage unavailable */ }
@@ -796,12 +850,21 @@ async function init() {
         state.reached = n;
         state.d = world.stops[n].d;
         state.chaseDone = state.d > world.chaseD;
+        state.cutDone = state.d > world.boardD;
+        state.driveT = 0;
         state.mode = world.modeAt(state.d);
         updateHud();
         snapCamera();
         if (n > 0) openCard(n);
       },
       freeze(on = true) { frozen = on; },
+      // stand by the car and set off on the drive
+      drive() {
+        closeCard(false);
+        Object.assign(state, { reached: 2, d: world.boardD - 40, chaseDone: true, cutDone: false, driveT: 0, event: null });
+        snapCamera();
+        travelTo(3);
+      },
       // jump into the chase at a given moment (seconds), e.g. __trip.chase(6)
       chase(at = 0) {
         closeCard(false);

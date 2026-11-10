@@ -31,7 +31,6 @@ CHARACTERS = {
 SCENES = {
     "walking street.png": ("scene-street", 320, 480),
     "lucca square.png": ("scene-square", 320, 400),
-    "car drive.png": ("scene-drive", 480, 270),
     "bath tub.png": ("scene-baths", 480, 360),
 }
 
@@ -153,6 +152,131 @@ for i in (1, 2, 3):
 
 # The lizard is drawn in code (js/sprites.js) in the colours of lizard.png:
 # at its true size (about 12px) a shrunk copy of the artwork turns to mush.
+
+def make_cutscene(src, out):
+    """Split the car picture into layers for the drive cutscene:
+    the scenery is removed (a scrolling background is drawn in code), the
+    dogs are lifted out as sprites (the back seat is painted in behind them),
+    Mom's and Dad's heads become separate layers so they can bob, and a
+    front layer keeps the dogs behind Mom, Dad and the seat edge."""
+    W, H = 480, 270
+    OUT = out
+    im = Image.open(src).convert("RGB").resize((W, H), Image.LANCZOS)
+    px = im.load()
+
+    def bg_candidate(x, y):
+        r, g, b = px[x, y]
+        if b > 140 and b > r + 25 and y < 185: return True            # sky
+        if y < 50 and r > 200 and g > 200 and b > 200: return True    # clouds
+        if y < 180 and g >= r - 12 and g > b + 12: return True        # hills, fields, leaves
+        return False
+
+    bg = [[bg_candidate(x, y) for y in range(H)] for x in range(W)]
+    for _ in range(2):  # specks of haze left between scenery pixels
+        flip = []
+        for x in range(1, W - 1):
+            for y in range(1, 180):
+                if bg[x][y]: continue
+                n = sum(bg[x + dx][y + dy] for dx in (-1, 0, 1) for dy in (-1, 0, 1) if dx or dy)
+                if n >= 6: flip.append((x, y))
+        for x, y in flip: bg[x][y] = True
+
+    # the tree in the top-left corner above the windscreen frame is scenery too
+    frame = [(0, 97), (20, 84), (40, 73), (60, 65), (80, 60), (110, 56), (140, 54)]
+    def above_frame(x, y):
+        for (x0, y0), (x1, y1) in zip(frame, frame[1:]):
+            if x0 <= x <= x1:
+                return y < y0 + (y1 - y0) * (x - x0) / (x1 - x0) - 2
+        return False
+    for x in range(140):
+        for y in range(100):
+            if above_frame(x, y): bg[x][y] = True
+
+    # dogs: warm fur, tongue, then outlines and enclosed holes
+    DOGS = {"dog1": (191, 99, 238, 154), "dog2": (239, 99, 296, 154)}
+    dogmask = {}
+    for name, (x0, y0, x1, y1) in DOGS.items():
+        m = set()
+        for x in range(x0, x1):
+            for y in range(y0, y1):
+                r, g, b = px[x, y]
+                if (r > g + 15 and r > b + 40) or (r > 190 and g < 140 and b > 100):
+                    m.add((x, y))
+        for _ in range(2):  # grow to take in the dark outline
+            grow = set(m)
+            for (x, y) in m:
+                for dx, dy in ((1,0),(-1,0),(0,1),(0,-1)):
+                    xx, yy = x + dx, y + dy
+                    if x0 <= xx < x1 and y0 <= yy < y1 and sum(px[xx, yy]) < 260: grow.add((xx, yy))
+            m = grow
+        # fill holes (eyes, nose): anything not reachable from the box edge
+        outside = set(); q = deque()
+        for x in range(x0, x1): q.extend(((x, y0), (x, y1 - 1)))
+        for y in range(y0, y1): q.extend(((x0, y), (x1 - 1, y)))
+        while q:
+            p = q.popleft()
+            x, y = p
+            if p in outside or p in m or not (x0 <= x < x1 and y0 <= y < y1): continue
+            outside.add(p)
+            q.extend(((x+1,y),(x-1,y),(x,y+1),(x,y-1)))
+        m = {(x, y) for x in range(x0, x1) for y in range(y0, y1) if (x, y) not in outside}
+        dogmask[name] = m
+
+    # the dogs as sprites
+    for name, m in dogmask.items():
+        xs = [p[0] for p in m]; ys = [p[1] for p in m]
+        bx0, by0, bx1, by1 = min(xs), min(ys), max(xs) + 1, max(ys) + 1
+        spr = Image.new("RGBA", (bx1 - bx0, by1 - by0), (0, 0, 0, 0))
+        for (x, y) in m: spr.putpixel((x - bx0, y - by0), px[x, y] + (255,))
+        spr.save(f"{OUT}/cut-{name}.png")
+        print(name, "at", bx0, by0, "size", spr.size)
+
+    # the car layer: scenery out, dogs painted over with the back-seat colour
+    car = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    cp = car.load()
+    alldog = dogmask["dog1"] | dogmask["dog2"]
+    # the back seat behind the dogs: each row's typical dark upholstery colour
+    seat_row = {}
+    for y in range(H):
+        dark = sorted((px[x, y] for x in range(180, 310)
+                       if (x, y) not in alldog and not bg[x][y] and sum(px[x, y]) < 330 and not px[x, y][0] > px[x, y][1] + 15),
+                      key=sum)
+        seat_row[y] = dark[len(dark) // 2] if dark else (58, 56, 64)
+    for y in range(H):
+        for x in range(W):
+            if bg[x][y]: continue
+            if (x, y) in alldog:
+                cp[x, y] = seat_row[y] + (255,)
+            else:
+                cp[x, y] = px[x, y] + (255,)
+
+    HEADS = {"mom": (64, 76, 202, 157), "dad": (295, 74, 367, 149)}
+    for name, box in HEADS.items():
+        head = car.crop(box)
+        head.save(f"{OUT}/cut-{name}.png")
+        for y in range(box[1], box[3]):
+            for x in range(box[0], box[2]): cp[x, y] = (0, 0, 0, 0)
+        print(name, "head at", box[0], box[1])
+    car.save(f"{OUT}/cut-car.png")
+
+    # the front layer: everything that should pass in front of the dogs
+    front = car.copy()
+    fp = front.load()
+    WIN = (198, 101, 296, 151)
+    for y in range(H):
+        for x in range(W):
+            if (WIN[0] <= x < WIN[2] and WIN[1] <= y < WIN[3]) or (x, y) in alldog:
+                fp[x, y] = (0, 0, 0, 0)
+    front.save(f"{OUT}/cut-front.png")
+    print("done")
+
+
+make_cutscene(SRC / "car drive.png", OUT)
+
+# Side views of the dogs, for poking their heads out of the car
+for src_name, name in (("dog 1 pixel.png", "cut-dog1-side"), ("dog 2 pixel.png", "cut-dog2-side")):
+    shrink(remove_background(Image.open(SRC / src_name)), 92).save(OUT / f"{name}.png", optimize=True)
+    print("side view", name)
 
 # Social preview image
 og = Image.open(SRC / "car drive.png").convert("RGB")

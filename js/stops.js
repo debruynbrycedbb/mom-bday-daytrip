@@ -2,7 +2,7 @@
 export const STOPS = [
   {
     chip: 'Walk through Lucca',
-    kicker: 'Stop 1 of 5 · On foot',
+    kicker: 'Stop 1 of 4 · On foot',
     title: 'A walk through Lucca',
     go: 'Walk into Lucca',
     scene: 'street',
@@ -14,7 +14,7 @@ export const STOPS = [
   },
   {
     chip: 'Breakfast in the square',
-    kicker: 'Stop 2 of 5 · Breakfast',
+    kicker: 'Stop 2 of 4 · Breakfast',
     title: 'Breakfast in the square',
     go: 'Walk to the square',
     scene: 'square',
@@ -25,22 +25,10 @@ export const STOPS = [
     details: [['When', '[Breakfast time]'], ['Café', '[Café name]']],
   },
   {
-    chip: 'The drive',
-    kicker: 'Stop 3 of 5 · On the road',
-    title: 'The drive to Bagni di Lucca',
-    go: 'Head to the car',
-    scene: 'drive',
-    alt: 'Pixel art of Mom in a sun hat and Dad driving a convertible with the roof down, both dogs looking out from the back seat, green hills behind.',
-    body: [
-      'Back to the car, roof down, dogs in the back seat. The road follows the river up the Serchio valley into the green hills.',
-    ],
-    details: [['Leave at', '[Departure time]'], ['Drive', '[Drive time]']],
-  },
-  {
     chip: 'The marble baths',
-    kicker: 'Stop 4 of 5 · Spa day',
+    kicker: 'Stop 3 of 4 · Spa day',
     title: 'A spa day in the marble baths',
-    go: 'Drive to the baths',
+    go: 'Off to the baths',
     scene: 'baths',
     alt: 'Pixel art of Mom and Dad relaxing together in a warm pool in a marble bathhouse, with candles and steam.',
     body: [
@@ -50,7 +38,7 @@ export const STOPS = [
   },
   {
     chip: 'One more thing',
-    kicker: 'Stop 5 of 5 · The best part',
+    kicker: 'Stop 4 of 4 · The best part',
     title: 'Happy birthday, Mom',
     go: 'Walk to the last stop',
     scene: 'birthday',

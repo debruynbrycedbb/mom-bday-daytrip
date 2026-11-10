@@ -18,9 +18,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Silkscreen&display=swap">
-  <link rel="stylesheet" href="css/style.css?v=2">
+  <link rel="stylesheet" href="css/style.css?v=3">
   
-  <script type="module" src="js/main.js?v=2"></script>
+  <script type="module" src="js/main.js?v=3"></script>
 </head>
 <body>
   <main>
@@ -62,6 +62,12 @@
           <button id="card-replay" class="btn btn-quiet" type="button" hidden>Replay the day</button>
         </div>
       </div>
+    </section>
+
+    <section id="cutscene" class="cutscene" aria-label="On the road to Bagni di Lucca" hidden>
+      <canvas id="cut-canvas" role="img" aria-label="Pixel art of Mom in her sun hat and Dad driving the convertible, roof down, with both dogs bouncing around the back seat and poking their heads out of the sides while the Tuscan countryside streams past."></canvas>
+      <p class="cut-caption">On the road to Bagni di Lucca</p>
+      <button id="cut-skip" class="btn btn-small cut-skip" type="button">Skip</button>
     </section>
 
     <section id="title" class="title-screen" aria-labelledby="title-heading">

@@ -1,7 +1,7 @@
 // "Living" scenes: each stop's image with pixel effects drawn on top in code.
 // Effects are clipped to masks found by colour (sky, water, plaza, hills), so
 // they sit inside the artwork rather than floating over it.
-import { mulberry32, bayer, disc, drawArt, hash2 } from './pixel.js?v=2';
+import { mulberry32, bayer, disc, drawArt, hash2 } from './pixel.js?v=3';
 
 // ---- helpers -----------------------------------------------------------
 
@@ -178,61 +178,6 @@ const SCENES = {
         const y = 190 + Math.sin(a) * 70 + Math.cos(k * 5) * 5;
         bird(ctx, x, y, t * 1.5 + k * 0.2, '#f4f0e8', 8);
       }
-    },
-  },
-
-  // Stop 3: the drive, roof down
-  drive: {
-    w: 480, h: 270, img: 'scene-drive',
-    setup(s) {
-      s.sky = makeMask(s, (r, g, b, x, y) => y < 110 && b > 150 && b > r + 40 && !(x < 140 && y < 80 && g > b));
-      s.hills = makeMask(s, (r, g, b, x, y) => y > 62 && y < 172 && g > r + 4 && g > b + 8 && !(x < 140 && y < 80));
-      s.backdrop = makeMask(s, (r, g, b, x, y) => s.sky.arr[y * s.w + x] || s.hills.arr[y * s.w + x]);
-      s.clouds = [0, 1, 2].map((k) => ({ c: makeCloud(s.rand, 14 + k * 4, 6), x: s.rand() * 480, y: 4 + k * 18, v: 6 + k * 3 }));
-      s.passing = [];
-      for (let k = 0; k < 9; k++) s.passing.push({ x: s.rand() * 520, y: 108 + s.rand() * 34, type: s.rand() < 0.6 ? 'cypress' : 'olive', v: 40 + s.rand() * 50 });
-      s.streaks = [0, 1, 2, 3, 4].map(() => ({ x: s.rand() * 480, y: 10 + s.rand() * 140, len: 8 + s.rand() * 14, v: 160 + s.rand() * 120 }));
-    },
-    draw(s, t, dt) {
-      const { ctx, w, h } = s;
-      // the car bumps along the road
-      const bump = Math.floor(t * 7) % 5 === 0 || Math.floor(t * 11) % 9 === 0 ? 1 : 0;
-      ctx.drawImage(s.img, 0, 0);
-      if (bump) ctx.drawImage(s.img, 0, 0, w, h - 1, 0, 1, w, h - 1);
-      let l = layer(s);
-      for (const c of s.clouds) {
-        const cw = c.c.width * 3;
-        const x = s.w - (((c.x + t * c.v) % (s.w + cw)));
-        l.drawImage(c.c, Math.round(x), c.y, cw, c.c.height * 3);
-      }
-      applyMask(s, s.sky);
-      // trees racing past behind the car
-      l = layer(s);
-      for (const p of s.passing) {
-        p.x -= p.v * dt;
-        if (p.x < -20) { p.x = w + 10 + s.rand() * 60; p.y = 108 + s.rand() * 34; }
-        const x = Math.round(p.x), y = Math.round(p.y);
-        if (p.type === 'cypress') {
-          const widths = [1, 2, 2, 3, 3, 3, 3, 3, 3, 2];
-          widths.forEach((wd, j) => {
-            l.fillStyle = '#25472b';
-            l.fillRect(x - wd, y - (widths.length - j) * 3, wd * 2, 3);
-            l.fillStyle = '#3c6a3a';
-            l.fillRect(x - wd, y - (widths.length - j) * 3, 1, 3);
-          });
-        } else {
-          blockDisc(l, x, y - 8, 8, '#5f7a3c', 2);
-          blockDisc(l, x - 2, y - 10, 4, '#8a9d58', 2);
-          l.fillStyle = '#5a3e27'; l.fillRect(x, y - 1, 2, 4);
-        }
-      }
-      for (const st of s.streaks) {
-        st.x -= st.v * dt;
-        if (st.x < -st.len) { st.x = w + s.rand() * 80; st.y = 10 + s.rand() * 140; }
-        l.fillStyle = 'rgba(255,255,255,0.75)';
-        l.fillRect(Math.round(st.x), Math.round(st.y), Math.round(st.len), 1);
-      }
-      applyMask(s, s.backdrop);
     },
   },
 

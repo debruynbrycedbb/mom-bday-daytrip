@@ -1,6 +1,6 @@
 // Sprites drawn in code, at the map's scale (1 m ≈ 20px):
 // the convertible, the signposts, the arrow and the lizard.
-import { drawArt, disc } from './pixel.js?v=2';
+import { drawArt, disc } from './pixel.js?v=3';
 
 // The convertible (≈4.3 m long), roof down, with the family's own sprites inside.
 // x,y = bottom centre; drawn facing right, mirrored when driving left.
