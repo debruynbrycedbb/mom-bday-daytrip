@@ -161,25 +161,35 @@ def make_cutscene(src, out):
     front layer keeps the dogs behind Mom, Dad and the seat edge."""
     W, H = 480, 270
     OUT = out
-    im = Image.open(src).convert("RGB").resize((W, H), Image.LANCZOS)
+    im = Image.open(src).convert("RGB").resize((W, H), Image.BOX)
     px = im.load()
 
-    def bg_candidate(x, y):
+    # Scenery is removed by filling outwards from the open sky and the view
+    # through the windscreen. The fill stops at dark outlines, so the car,
+    # Mom's hat and the frame's cream highlight can never be eaten into.
+    def passable(x, y):
         r, g, b = px[x, y]
-        if b > 140 and b > r + 25 and y < 185: return True            # sky
-        if y < 50 and r > 200 and g > 200 and b > 200: return True    # clouds
-        if y < 180 and g >= r - 12 and g > b + 12: return True        # hills, fields, leaves
+        if g > r + 6 and b < g + 15 and r + g + b >= 140: return True  # hills and dark trees
+        if r + g + b < 300: return False                       # outlines and shadows
+        if b > 140 and b > r + 25: return True                 # sky
+        if y < 46 and min(r, g, b) > 195: return True          # clouds above the frame
+        if y < 60 and min(r, g, b) > 190 and b >= r: return True  # blue-white cloud
+        if r > 150 and g > 140 and b < 120 and abs(r - g) < 45: return True  # sunny fields
         return False
 
-    bg = [[bg_candidate(x, y) for y in range(H)] for x in range(W)]
-    for _ in range(2):  # specks of haze left between scenery pixels
-        flip = []
-        for x in range(1, W - 1):
-            for y in range(1, 180):
-                if bg[x][y]: continue
-                n = sum(bg[x + dx][y + dy] for dx in (-1, 0, 1) for dy in (-1, 0, 1) if dx or dy)
-                if n >= 6: flip.append((x, y))
-        for x, y in flip: bg[x][y] = True
+    bg = [[False] * H for _ in range(W)]
+    q = deque([(x, 0) for x in range(W)] + [(0, y) for y in range(140)] + [(W - 1, y) for y in range(140)])
+    # also start from every pixel that can only be scenery: clear blue sky or
+    # strong green (the car and the family have neither)
+    for x in range(W):
+        for y in range(170):
+            r, g, b = px[x, y]
+            if (b > 200 and b > r + 50) or (g > r + 15 and g > b + 15): q.append((x, y))
+    while q:
+        x, y = q.popleft()
+        if x < 0 or y < 0 or x >= W or y >= H or bg[x][y] or not passable(x, y): continue
+        bg[x][y] = True
+        q.extend(((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)))
 
     # the tree in the top-left corner above the windscreen frame is scenery too
     frame = [(0, 97), (20, 84), (40, 73), (60, 65), (80, 60), (110, 56), (140, 54)]
@@ -191,6 +201,24 @@ def make_cutscene(src, out):
     for x in range(140):
         for y in range(100):
             if above_frame(x, y): bg[x][y] = True
+
+    # floating scraps (dark trees in the hills, a sliver of cloud): any small
+    # island of picture left in the scenery area goes too
+    seen = [[False] * H for _ in range(W)]
+    for sx in range(W):
+        for sy in range(185):
+            if bg[sx][sy] or seen[sx][sy]: continue
+            comp, q = [], deque([(sx, sy)])
+            seen[sx][sy] = True
+            while q:
+                x, y = q.popleft()
+                comp.append((x, y))
+                for xx, yy in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                    if 0 <= xx < W and 0 <= yy < H and not bg[xx][yy] and not seen[xx][yy]:
+                        seen[xx][yy] = True
+                        q.append((xx, yy))
+            if len(comp) < 300 and max(y for _, y in comp) < 185:
+                for x, y in comp: bg[x][y] = True
 
     # dogs: warm fur, tongue, then outlines and enclosed holes
     DOGS = {"dog1": (191, 99, 238, 154), "dog2": (239, 99, 296, 154)}

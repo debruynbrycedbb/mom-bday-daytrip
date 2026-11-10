@@ -1,7 +1,8 @@
 // The drive cutscene: the full-size car picture, cut into layers so the
 // countryside can stream past, the car can bump along the road, Mom and Dad
-// can bob, and the dogs can scamper about the back seat and look out the sides.
-import { bayer, hash2, disc } from './pixel.js?v=3';
+// can bob, and the dogs can bounce about the back seat, turn to look out of
+// each side and bark at the view. The dogs always stay inside the car.
+import { bayer, hash2, disc, drawArt } from './pixel.js?v=4';
 
 export const CUT_LENGTH = 7; // seconds
 
@@ -9,65 +10,101 @@ const W = 480, H = 270;
 // where each cut-out layer sits in the picture (from tools/prepare_images.py)
 const POS = {
   mom: [64, 76], dad: [295, 74],
-  dog1: [191, 99], dog2: [239, 105],
+  dog1: [191, 103], dog2: [239, 105],
 };
-const SEAT_EDGE = 151; // the dogs disappear behind the seat below this line
+const SEAT_EDGE = 151; // the dogs disappear behind the back seat below this line
 
-// Each dog's little routine. pose: 'front' (as in the picture) or 'side'
-// (head out of the car, looking to that side). dx/dy are offsets in pixels.
-// Side poses sit at the car's edges: dog 1 over the left side behind Mom,
-// dog 2 over the right side behind Dad. To get there each dog first ducks
-// behind Mom or Dad in its front pose, then pops up at the side.
+// The head-and-chest part of each dog's side view (the head is turned, as if
+// looking out). Dog 1's side view looks right in the art, dog 2's looks left.
+const HEAD = {
+  dog1: { sx: 56, sy: 14, w: 52, h: 50, looksRight: true },
+  dog2: { sx: 14, sy: 16, w: 50, h: 50, looksRight: false },
+};
+
+// Each dog's routine. pose: 'front' (as in the picture), 'left' or 'right'
+// (head turned to look out of that side, stretching up). dx/dy are pixel
+// offsets from the dog's place in the picture; the back seat runs from about
+// dx -50 to +50, so the dogs never leave the car.
 const ROUTINE = {
   dog1: [
     { t: 0, pose: 'front', dx: 0, dy: 0 },
     { t: 1.2, pose: 'front', dx: 0, dy: 0 },
-    { t: 1.5, pose: 'front', dx: -62, dy: 6 },  // ducks behind Mom
-    { t: 1.6, pose: 'side', dx: 0, dy: 14 },    // ...and pops out of the left side
-    { t: 1.9, pose: 'side', dx: 0, dy: 0 },
-    { t: 3.2, pose: 'side', dx: 0, dy: -3 },
-    { t: 3.4, pose: 'side', dx: 0, dy: 14 },
-    { t: 3.5, pose: 'front', dx: -62, dy: 6 },
-    { t: 3.9, pose: 'front', dx: 46, dy: 2 },   // scoots across the seat
-    { t: 4.9, pose: 'front', dx: 46, dy: -2 },
-    { t: 5.4, pose: 'front', dx: 0, dy: 0 },
-    { t: 6.0, pose: 'front', dx: 0, dy: -7 },
-    { t: 6.3, pose: 'front', dx: 0, dy: 0 },
+    { t: 1.3, pose: 'left', dx: -6, dy: -6 },
+    { t: 2.9, pose: 'left', dx: -8, dy: -9 },
+    { t: 3.05, pose: 'front', dx: 0, dy: 0 },
+    { t: 3.55, pose: 'front', dx: 46, dy: 0 },  // hops across the seat
+    { t: 4.4, pose: 'front', dx: 46, dy: 0 },
+    { t: 4.5, pose: 'right', dx: 48, dy: -6 },
+    { t: 5.6, pose: 'right', dx: 50, dy: -9 },
+    { t: 5.75, pose: 'front', dx: 46, dy: 0 },
+    { t: 6.25, pose: 'front', dx: 0, dy: 0 },
     { t: 99, pose: 'front', dx: 0, dy: 0 },
   ],
   dog2: [
     { t: 0, pose: 'front', dx: 0, dy: 0 },
-    { t: 1.0, pose: 'front', dx: 0, dy: -5 },
-    { t: 1.3, pose: 'front', dx: 0, dy: 0 },
-    { t: 3.2, pose: 'front', dx: 0, dy: 0 },
-    { t: 3.5, pose: 'front', dx: 64, dy: 6 },   // ducks behind Dad
-    { t: 3.6, pose: 'side', dx: 0, dy: 14 },    // ...and pops out of the right side
-    { t: 3.9, pose: 'side', dx: 0, dy: 0 },
-    { t: 5.0, pose: 'side', dx: 0, dy: -3 },
-    { t: 5.2, pose: 'side', dx: 0, dy: 14 },
-    { t: 5.3, pose: 'front', dx: 64, dy: 6 },
-    { t: 5.75, pose: 'front', dx: -48, dy: 0 },
-    { t: 6.3, pose: 'front', dx: -48, dy: -2 },
-    { t: 6.7, pose: 'front', dx: 0, dy: 0 },
+    { t: 1.6, pose: 'front', dx: 0, dy: -4 },
+    { t: 1.9, pose: 'front', dx: 0, dy: 0 },
+    { t: 2.2, pose: 'front', dx: 0, dy: 0 },
+    { t: 2.3, pose: 'right', dx: 6, dy: -6 },
+    { t: 3.0, pose: 'right', dx: 8, dy: -9 },
+    { t: 3.1, pose: 'front', dx: 0, dy: 0 },
+    { t: 3.6, pose: 'front', dx: -46, dy: 0 }, // and swaps sides too
+    { t: 4.55, pose: 'front', dx: -46, dy: 0 },
+    { t: 4.65, pose: 'left', dx: -48, dy: -6 },
+    { t: 5.65, pose: 'left', dx: -50, dy: -9 },
+    { t: 5.8, pose: 'front', dx: -46, dy: 0 },
+    { t: 6.3, pose: 'front', dx: 0, dy: 0 },
     { t: 99, pose: 'front', dx: 0, dy: 0 },
   ],
 };
-const YIPS = [1.7, 3.7, 6.0];
+// Barks out of the window: [time, dog]
+const BARKS = [[1.45, 'dog1'], [1.95, 'dog1'], [2.4, 'dog2'], [2.75, 'dog2'], [4.6, 'dog1'], [4.75, 'dog2'], [5.2, 'dog1'], [5.35, 'dog2']];
+const BUBBLE_TIME = 0.4;
 
 function dogAt(list, t) {
   let i = 0;
   while (i < list.length - 2 && list[i + 1].t <= t) i++;
   const a = list[i], b = list[i + 1];
   const u = Math.max(0, Math.min(1, (t - a.t) / (b.t - a.t)));
-  // switching pose happens in one jump (hidden behind Mom or Dad)
-  if (a.pose !== b.pose) return { pose: u < 1 ? a.pose : b.pose, dx: u < 1 ? a.dx : b.dx, dy: u < 1 ? a.dy : b.dy, moving: false };
+  // turning the head happens in one quick move
+  if (a.pose !== b.pose) return { pose: u < 0.5 ? a.pose : b.pose, dx: u < 0.5 ? a.dx : b.dx, dy: u < 0.5 ? a.dy : b.dy, moving: false };
   const moving = a.dx !== b.dx;
   return {
     pose: a.pose,
     dx: a.dx + (b.dx - a.dx) * u,
-    dy: a.dy + (b.dy - a.dy) * u - (moving ? Math.sin(Math.PI * u) * 7 : 0), // a little hop
+    dy: a.dy + (b.dy - a.dy) * u - (moving ? Math.sin(Math.PI * u) * 8 : 0), // a little hop
     moving: moving && u > 0 && u < 1,
   };
+}
+
+// A tiny pixel font for the barks
+const GLYPHS = {
+  W: ['X.X', 'X.X', 'XXX', 'XXX', 'X.X'],
+  O: ['XXX', 'X.X', 'X.X', 'X.X', 'XXX'],
+  F: ['XXX', 'X..', 'XX.', 'X..', 'X..'],
+  Y: ['X.X', 'X.X', '.X.', '.X.', '.X.'],
+  I: ['XXX', '.X.', '.X.', '.X.', 'XXX'],
+  P: ['XX.', 'X.X', 'XX.', 'X..', 'X..'],
+  '!': ['X', 'X', 'X', '.', 'X'],
+};
+function bubble(g, text, x, y, pointLeft) {
+  const glyphs = [...text].map((ch) => GLYPHS[ch]);
+  const tw = glyphs.reduce((s, gl) => s + gl[0].length + 1, -1);
+  const bw = tw + 6, bh = 11;
+  const bx = Math.round(pointLeft ? x - bw : x), by = Math.round(y - bh);
+  g.fillStyle = '#2a1a14';
+  g.fillRect(bx, by - 1, bw, bh + 2); g.fillRect(bx - 1, by, bw + 2, bh);
+  g.fillStyle = '#fffaf0';
+  g.fillRect(bx, by, bw, bh);
+  // tail towards the dog
+  const tx = pointLeft ? bx + bw - 4 : bx + 2;
+  g.fillStyle = '#2a1a14'; g.fillRect(tx - 1, by + bh, 4, 3);
+  g.fillStyle = '#fffaf0'; g.fillRect(tx, by + bh, 2, 2);
+  let cx = bx + 3;
+  for (const gl of glyphs) {
+    drawArt(g, gl, { X: '#2a1a14' }, cx, by + 3);
+    cx += gl[0].length + 1;
+  }
 }
 
 function cloud(rand) {
@@ -85,7 +122,7 @@ function cloud(rand) {
   return c;
 }
 
-export function createCutscene(canvas, assets, { reduced = false, onYip = () => {} } = {}) {
+export function createCutscene(canvas, assets, { reduced = false, onBark = () => {} } = {}) {
   canvas.width = W;
   canvas.height = H;
   const g = canvas.getContext('2d');
@@ -105,7 +142,7 @@ export function createCutscene(canvas, assets, { reduced = false, onYip = () => 
       sg.fillRect(x, y, 1, 1);
     }
   }
-  sg.fillStyle = '#6f9a4a';
+  sg.fillStyle = '#93b24c';
   sg.fillRect(0, 110, W, H - 110);
 
   const clouds = [0, 1, 2, 3].map((k) => ({ c: cloud(rand), x: k * 140 + rand() * 60, y: 4 + k * 11, v: 5 + k * 2 }));
@@ -113,87 +150,85 @@ export function createCutscene(canvas, assets, { reduced = false, onYip = () => 
   const passing = [];
   for (let k = 0; k < 7; k++) passing.push({ x: k * 90 + rand() * 40, kind: rand() < 0.55 ? 'cypress' : 'tree', s: 0.8 + rand() * 0.4 });
   const streaks = [0, 1, 2, 3, 4, 5].map(() => ({ x: rand() * W, y: 10 + rand() * 150, len: 10 + rand() * 18, v: 260 + rand() * 160 }));
-  let yip = 0;
+  let bark = 0;
 
-  // ridge height helper for the rolling hills
+  // ridge height for the rolling hills (whole pixels, so nothing shimmers)
   const ridge = (x, base, amp, freq, seed2) =>
     Math.round(base - amp * (0.5 + 0.5 * Math.sin(x * freq + seed2) * Math.cos(x * freq * 0.41 + seed2 * 1.7)));
+  const wrap = (v, span) => ((v % span) + span) % span;
 
   function background(t) {
     g.drawImage(sky, 0, 0);
     for (const c of clouds) {
       const cw = c.c.width * 3;
-      const x = ((c.x - t * c.v) % (W + cw) + W + cw) % (W + cw) - cw;
-      g.drawImage(c.c, Math.round(x), c.y, cw, c.c.height * 3);
+      const x = wrap(c.x - Math.round(t * c.v), W + cw) - cw;
+      g.drawImage(c.c, x, c.y, cw, c.c.height * 3);
     }
-    // far hills (slow), then fields and olive rows (faster)
-    const far = t * 12, mid = t * 46;
+    // far hills (slow), then furrowed fields following the slope (faster)
+    const far = Math.round(t * 12), mid = Math.round(t * 46);
     for (let x = 0; x < W; x++) {
       const y1 = ridge(x + far, 104, 22, 0.018, 1);
       g.fillStyle = '#8fb3a2'; g.fillRect(x, y1, 1, 112 - y1);
+      g.fillStyle = '#7fa494'; g.fillRect(x, y1, 1, 1);
       const y2 = ridge(x + mid, 122, 18, 0.024, 4);
       g.fillStyle = '#c6d77a'; g.fillRect(x, y2, 1, 1);
-      // furrows: 6px bands that slope gently as they stream past
-      const shift = Math.floor((x + mid) * 0.02) % 2;
-      for (let y = y2 + 1, k = shift; y < 200; y += 6, k++) {
+      for (let y = y2 + 1, k = 0; y < 200; y += 6, k++) {
         g.fillStyle = k % 2 ? '#a7c25a' : '#93b24c';
         g.fillRect(x, y, 1, 6);
       }
     }
-    // olive trees along the mid field
+    // olive trees dotted along the fields
     for (let k = 0; k < 9; k++) {
-      const x = ((k * 70 - mid * 1.1) % (W + 80) + W + 80) % (W + 80) - 40;
+      const x = wrap(k * 70 - Math.round(mid * 1.1), W + 80) - 40;
       const y = ridge(x + mid, 122, 18, 0.024, 4) + 10;
-      disc(g, Math.round(x), y, 6, '#7d8f55');
-      disc(g, Math.round(x) - 2, y - 2, 3, '#a2b06d');
+      disc(g, x, y, 6, '#7d8f55');
+      disc(g, x - 2, y - 2, 3, '#a2b06d');
     }
     // near trees and cypresses flashing past
     for (const p of passing) {
-      const span = W + 160;
-      const x = ((p.x - t * 190 * p.s) % span + span) % span - 80;
+      const x = wrap(p.x - Math.round(t * 190 * p.s), W + 160) - 80;
       const base = 172;
       if (p.kind === 'cypress') {
         for (let j = 0; j < 90; j++) {
           const half = Math.max(1, Math.round(11 * Math.sin(Math.min(1, (j / 90) * 1.1) * Math.PI * 0.55)));
-          g.fillStyle = '#22472a';
-          g.fillRect(Math.round(x) - half, base - 90 + j, half * 2, 1);
-          g.fillStyle = '#33613a';
-          g.fillRect(Math.round(x) - half, base - 90 + j, 2, 1);
+          g.fillStyle = '#22472a'; g.fillRect(x - half, base - 90 + j, half * 2, 1);
+          g.fillStyle = '#33613a'; g.fillRect(x - half, base - 90 + j, 2, 1);
         }
       } else {
-        g.fillStyle = '#5a3e27'; g.fillRect(Math.round(x) - 2, base - 26, 5, 26);
-        disc(g, Math.round(x), base - 40, 22, '#3c6a32');
-        disc(g, Math.round(x) - 6, base - 46, 12, '#5a8a3e');
+        g.fillStyle = '#5a3e27'; g.fillRect(x - 2, base - 26, 5, 26);
+        disc(g, x, base - 40, 22, '#3c6a32');
+        disc(g, x - 6, base - 46, 12, '#5a8a3e');
       }
     }
-    for (const s of streaks) {
-      const x = ((s.x - t * s.v) % (W + 60) + W + 60) % (W + 60) - 30;
-      g.fillStyle = 'rgba(255,255,255,0.7)';
-      g.fillRect(Math.round(x), s.y, Math.round(s.len), 1);
-    }
+    g.fillStyle = 'rgba(255,255,255,0.7)';
+    for (const s of streaks) g.fillRect(wrap(s.x - Math.round(t * s.v), W + 60) - 30, s.y, Math.round(s.len), 1);
   }
+
+  // where each dog's head is, for the bark bubbles
+  const heads = {};
 
   function drawDog(name, t, bump) {
     const st = dogAt(ROUTINE[name], t);
     const idle = reduced ? 0 : Math.floor(t * 4 + (name === 'dog1' ? 0 : 1.5)) % 2;
+    const [hx, hy] = POS[name];
     if (st.pose === 'front') {
       const img = assets[`cut-${name}`];
-      const [x, y] = POS[name];
-      g.drawImage(img, Math.round(x + st.dx), Math.round(y + st.dy + bump + (st.moving ? 0 : idle)));
+      const x = Math.round(hx + st.dx), y = Math.round(hy + st.dy + bump + (st.moving ? 0 : idle));
+      g.drawImage(img, x, y);
+      heads[name] = { x: x + img.width / 2, y, side: 0 };
     } else {
-      // head out of the side, ears in the wind
-      const img = assets[`cut-${name}-side`];
-      const faceLeft = name === 'dog1';
-      const nativeRight = name === 'dog1'; // dog 1's side view faces right, dog 2's faces left
-      const flip = faceLeft === nativeRight;
-      // head over the side of the car, body hidden behind Mom or Dad
-      const x = name === 'dog1' ? 14 : 466 - img.width;
-      const y = 98 + st.dy + bump + idle;
+      // head turned to look out of one side, stretching up over the seat
+      const h = HEAD[name];
+      const lookRight = st.pose === 'right';
+      const flip = lookRight !== h.looksRight;
+      const ears = reduced ? 0 : Math.floor(t * 9) % 2; // ears flapping in the wind
+      const x = Math.round(hx + st.dx), y = Math.round(hy + st.dy + bump + ears);
       g.save();
-      g.translate(Math.round(x + st.dx) + (flip ? img.width : 0), Math.round(y));
+      g.translate(x + (flip ? h.w : 0), y);
       if (flip) g.scale(-1, 1);
-      g.drawImage(img, 0, 0);
+      g.drawImage(assets[`cut-${name}-side`], h.sx, h.sy, h.w, h.h, 0, 0, h.w, h.h);
       g.restore();
+      heads[name] = { x: lookRight ? x + h.w - 4 : x + 4, y, side: lookRight ? 1 : -1 };
     }
   }
 
@@ -202,7 +237,7 @@ export function createCutscene(canvas, assets, { reduced = false, onYip = () => 
     background(tt);
     const bump = reduced ? 0 : (Math.floor(t * 7) % 5 === 0 || Math.floor(t * 11) % 9 === 0 ? 1 : 0);
     g.drawImage(assets['cut-car'], 0, bump);
-    // dogs sit between the back seat and everything in front of them
+    // the dogs sit between the back seat and everything in front of them
     g.save();
     g.beginPath();
     g.rect(0, 0, W, SEAT_EDGE + bump);
@@ -216,14 +251,20 @@ export function createCutscene(canvas, assets, { reduced = false, onYip = () => 
     const dadBob = reduced ? 0 : Math.floor(t * 2.2 + 1) % 4 === 0 ? 1 : 0;
     g.drawImage(assets['cut-mom'], POS.mom[0], POS.mom[1] + bump + momBob);
     g.drawImage(assets['cut-dad'], POS.dad[0], POS.dad[1] + bump + dadBob);
-    // dappled shadows of roadside trees sweeping over the car
+    // the shadow of a roadside tree sweeping over the car
     if (!reduced) {
-      const sx = W + 80 - ((t * 190) % 560);
-      g.fillStyle = 'rgba(20,30,20,0.18)';
-      for (let y = 60; y < H; y += 2)
-        for (let x = 0; x < 52; x += 2) if ((x + y) % 4 === 0 && hash2(x, y) < 0.8) g.fillRect(Math.round(sx + x + (y - 60) * 0.35), y, 2, 2);
+      const sx = W + 120 - ((t * 190) % 900);
+      g.fillStyle = 'rgba(20,30,20,0.13)';
+      for (let y = 112; y < H; y++) g.fillRect(Math.round(sx + (y - 112) * 0.35), y, 70, 1); // car and ground, not sky
     }
-    while (yip < YIPS.length && t >= YIPS[yip]) { yip++; onYip(); }
+    // barking out of the window, with a bubble by the dog's head
+    while (bark < BARKS.length && t >= BARKS[bark][0]) { onBark(BARKS[bark][1]); bark++; }
+    for (const [bt, name] of BARKS) {
+      if (t < bt || t > bt + BUBBLE_TIME || !heads[name]) continue;
+      const hd = heads[name];
+      const pointLeft = hd.side < 0 || (hd.side === 0 && name === 'dog1');
+      bubble(g, name === 'dog1' ? 'YIP!' : 'WOOF!', hd.x + (pointLeft ? -2 : 2), hd.y - 2, pointLeft);
+    }
     // pixel dissolve in and out
     const fade = t < 0.45 ? 1 - t / 0.45 : t > CUT_LENGTH - 0.45 ? (t - (CUT_LENGTH - 0.45)) / 0.45 : 0;
     if (fade > 0) {

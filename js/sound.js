@@ -10,7 +10,7 @@ export const isOn = () => on;
 export function setOn(v) {
   on = v;
   if (v) ensure();
-  else engineOn(false);
+  else { engineOn(false); windOn(false); }
 }
 
 function ensure() {
@@ -97,13 +97,51 @@ export function splash() {
   tone(330, t + 0.05, 0.25, { type: 'triangle', vol: 0.2, slide: 660 });
 }
 
-// A small dog's "woof": a quick falling square tone over a puff of noise
-export function bark() {
+// Barks. Dog 1 (the poodle) yips high and quick; dog 2 (the spaniel) gives a
+// deeper "woof". Called with no name, it's dog 2's woof.
+export function bark(name = 'dog2') {
   if (!ready()) return;
   const t = ac.currentTime;
-  tone(520, t, 0.09, { vol: 0.32, slide: 300 });
-  noise(t, 0.08, { vol: 0.25, freq: 900 });
-  tone(470, t + 0.13, 0.08, { vol: 0.26, slide: 280 });
+  if (name === 'dog1') {
+    tone(900, t, 0.06, { vol: 0.3, slide: 620 });
+    noise(t, 0.05, { vol: 0.2, freq: 1800 });
+    tone(860, t + 0.09, 0.05, { vol: 0.26, slide: 600 });
+  } else {
+    tone(420, t, 0.12, { vol: 0.34, slide: 230 });
+    noise(t, 0.1, { vol: 0.26, freq: 700 });
+    tone(380, t + 0.16, 0.1, { vol: 0.28, slide: 210 });
+  }
+}
+
+// Wind rushing past an open-top car
+let wind = null;
+export function windOn(v) {
+  if (v && on && ensure() && !wind) {
+    const src = ac.createBufferSource();
+    src.buffer = noiseBuf;
+    src.loop = true;
+    const f = ac.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 500;
+    f.Q.value = 0.6;
+    const lfo = ac.createOscillator();
+    lfo.frequency.value = 0.35;
+    const lg = ac.createGain();
+    lg.gain.value = 180;
+    lfo.connect(lg).connect(f.frequency);
+    const g = ac.createGain();
+    g.gain.value = 0;
+    g.gain.setTargetAtTime(0.22, ac.currentTime, 0.4);
+    src.connect(f).connect(g).connect(out);
+    src.start();
+    lfo.start();
+    wind = { src, lfo, g };
+  } else if (!v && wind) {
+    const w = wind;
+    wind = null;
+    w.g.gain.setTargetAtTime(0, ac.currentTime, 0.2);
+    setTimeout(() => { w.src.stop(); w.lfo.stop(); }, 900);
+  }
 }
 
 export function engineOn(v) {

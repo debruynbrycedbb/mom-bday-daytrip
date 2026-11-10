@@ -1,13 +1,13 @@
 // Mom's birthday day trip: the map, the travelling family, the park chase,
 // the HUD and the stop cards.
-import { buildWorld, W, H, LABELS, POOL_RECT, HILL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=3';
-import { drawCar, drawSign, drawArrow, drawLizard } from './sprites.js?v=3';
-import { STOPS } from './stops.js?v=3';
-import { createScene } from './scenes.js?v=3';
-import { createTitle } from './title.js?v=3';
-import * as sound from './sound.js?v=3';
-import { hash2, pline } from './pixel.js?v=3';
-import { createCutscene, CUT_LENGTH } from './cutscene.js?v=3';
+import { buildWorld, W, H, LABELS, POOL_RECT, HILL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=4';
+import { drawCar, drawSign, drawArrow, drawLizard } from './sprites.js?v=4';
+import { STOPS } from './stops.js?v=4';
+import { createScene } from './scenes.js?v=4';
+import { createTitle } from './title.js?v=4';
+import * as sound from './sound.js?v=4';
+import { hash2, pline } from './pixel.js?v=4';
+import { createCutscene, CUT_LENGTH } from './cutscene.js?v=4';
 
 const $ = (s) => document.querySelector(s);
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -65,7 +65,7 @@ function loadImage(name) {
     const img = new Image();
     img.onload = () => resolve((assets[name] = img));
     img.onerror = () => reject(new Error(`Could not load ${name}`));
-    img.src = `assets/img/${name}.png?v=3`;
+    img.src = `assets/img/${name}.png?v=4`;
   });
 }
 
@@ -389,7 +389,8 @@ function bubbleText() {
 
 function startCut() {
   state.cut = { t: 0 };
-  cutscene = createCutscene(el.cutCanvas, assets, { reduced, onYip: () => sound.bark() });
+  cutscene = createCutscene(el.cutCanvas, assets, { reduced, onBark: (dog) => sound.bark(dog) });
+  sound.windOn(true);
   el.cut.hidden = false;
   document.body.classList.add('cut-on');
   updateHud();
@@ -401,6 +402,7 @@ function endCut() {
   state.cut = null;
   cutscene = null;
   state.cutDone = true;
+  sound.windOn(false);
   // time has passed on the road: pick the drive up near the end
   state.d = Math.max(state.d, world.parkD - DRIVE_AFTER_CUT);
   snapCamera();
