@@ -20,11 +20,11 @@ All stop text is in `js/stops.js`. Anything in `[square brackets]` is a placehol
 - `[Spa time]`, `[What to bring]`
 - `[Restaurant name]`, `[Where we’re staying]` (Barga)
 - `[Lunch spot]` (Pietrasanta)
-- `[Your birthday message to Mom]`, `[Your names]`
+- `[Your names]`
 - `[Dog 2’s name]` shows in the status line during the lizard chase (in `js/main.js`, `updateHud`)
 - `[Date of the trip]` is on the title screen, in `index.html`
 
-After any change, bump the version (currently `?v=8`, so next `?v=9`) in `index.html`, in every `import` line in `js/*.js` and in `loadImage` in `js/main.js`, so browsers fetch the new files.
+After any change, bump the version (currently `?v=9`, so next `?v=10`) in `index.html`, in every `import` line in `js/*.js` and in `loadImage` in `js/main.js`, so browsers fetch the new files.
 
 ## How it's built
 

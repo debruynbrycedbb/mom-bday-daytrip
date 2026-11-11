@@ -105,7 +105,7 @@ export const STOPS = [
     go: 'Drive home to Lucca',
     scene: 'birthday',
     alt: 'Pixel art of Mom, Dad and the two dogs on Lucca’s walls at sunset with a birthday cake, bunting and fireworks over the town.',
-    body: ['[Your birthday message to Mom]'],
+    body: ['Happy birthday mom! Hope you have an amazing trip and take lots of photos, I also hope dad is helping with all the unpacking of the house and his ass isn’t finding a chair like me. I hope you liked this little journey I made, and can’t wait to see you for Christmas! I love you hella mucho!'],
     signoff: 'Love, [Your names]',
     details: [['Drive from Pietrasanta', 'About 30 minutes']],
   },

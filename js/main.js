@@ -1,13 +1,13 @@
 // Mom's birthday day trip: the map, the travelling family, the park chase,
 // the HUD and the stop cards.
-import { buildWorld, W, H, LABELS, POOL_RECT, FINAL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=8';
-import { drawCar, drawSign, drawArrow, drawLizard, makeFamily } from './sprites.js?v=8';
-import { STOPS } from './stops.js?v=8';
-import { createScene } from './scenes.js?v=8';
-import { createTitle } from './title.js?v=8';
-import * as sound from './sound.js?v=8';
-import { hash2, pline } from './pixel.js?v=8';
-import { createCutscene, CUT_LENGTH } from './cutscene.js?v=8';
+import { buildWorld, W, H, LABELS, POOL_RECT, FINAL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=9';
+import { drawCar, drawSign, drawArrow, drawLizard, makeFamily } from './sprites.js?v=9';
+import { STOPS } from './stops.js?v=9';
+import { createScene } from './scenes.js?v=9';
+import { createTitle } from './title.js?v=9';
+import * as sound from './sound.js?v=9';
+import { hash2, pline } from './pixel.js?v=9';
+import { createCutscene, CUT_LENGTH } from './cutscene.js?v=9';
 
 const $ = (s) => document.querySelector(s);
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -72,7 +72,7 @@ function loadImage(name) {
     const img = new Image();
     img.onload = () => resolve((assets[name] = img));
     img.onerror = () => reject(new Error(`Could not load ${name}`));
-    img.src = `assets/img/${name}.png?v=8`;
+    img.src = `assets/img/${name}.png?v=9`;
   });
 }
 
