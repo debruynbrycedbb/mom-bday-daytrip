@@ -1,7 +1,7 @@
 // "Living" scenes: each stop's image with pixel effects drawn on top in code.
 // Effects are clipped to masks found by colour (sky, water, plaza, hills), so
 // they sit inside the artwork rather than floating over it.
-import { mulberry32, bayer, disc, drawArt, hash2 } from './pixel.js?v=9';
+import { mulberry32, bayer, disc, drawArt, hash2 } from './pixel.js?v=10';
 
 // ---- helpers -----------------------------------------------------------
 

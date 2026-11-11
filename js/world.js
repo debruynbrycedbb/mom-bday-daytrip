@@ -6,7 +6,7 @@
 // The ground is painted pixel by pixel in 256px tiles, made on demand.
 // Things the family can walk behind (trees, gates, lamps, café umbrellas)
 // are drawn every frame in depth order; everything else is baked into tiles.
-import { mulberry32, hash2, vnoise, bayer, hex, shade, disc, densify } from './pixel.js?v=9';
+import { mulberry32, hash2, vnoise, bayer, hex, shade, disc, densify } from './pixel.js?v=10';
 
 export const W = 2200;
 export const H = 6800;

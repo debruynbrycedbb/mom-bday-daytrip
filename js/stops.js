@@ -11,7 +11,7 @@ export const STOPS = [
     scene: 'street',
     alt: 'Pixel art of Mom and Dad walking the two dogs down a narrow cobbled street in Lucca, between ochre houses with green shutters.',
     body: [
-      'We wake up in Lucca and take the dogs for a walk through town: in through the old city walls and along the lanes towards the city square.',
+      'We wake up in Lucca and take Thula and Rafiki for a walk through town: in through the old city walls and along the lanes towards the city square.',
     ],
     details: [['When', '[Start time]'], ['Meet at', '[Meeting point]']],
   },
@@ -106,7 +106,7 @@ export const STOPS = [
     scene: 'birthday',
     alt: 'Pixel art of Mom, Dad and the two dogs on Lucca’s walls at sunset with a birthday cake, bunting and fireworks over the town.',
     body: ['Happy birthday mom! Hope you have an amazing trip and take lots of photos, I also hope dad is helping with all the unpacking of the house and his ass isn’t finding a chair like me. I hope you liked this little journey I made, and can’t wait to see you for Christmas! I love you hella mucho!'],
-    signoff: 'Love, [Your names]',
+    signoff: 'Love, Bryce',
     details: [['Drive from Pietrasanta', 'About 30 minutes']],
   },
 ];

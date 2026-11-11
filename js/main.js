@@ -1,13 +1,13 @@
 // Mom's birthday day trip: the map, the travelling family, the park chase,
 // the HUD and the stop cards.
-import { buildWorld, W, H, LABELS, POOL_RECT, FINAL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=9';
-import { drawCar, drawSign, drawArrow, drawLizard, makeFamily } from './sprites.js?v=9';
-import { STOPS } from './stops.js?v=9';
-import { createScene } from './scenes.js?v=9';
-import { createTitle } from './title.js?v=9';
-import * as sound from './sound.js?v=9';
-import { hash2, pline } from './pixel.js?v=9';
-import { createCutscene, CUT_LENGTH } from './cutscene.js?v=9';
+import { buildWorld, W, H, LABELS, POOL_RECT, FINAL_SPOT, FOUNTAIN_SPOT, CHASE } from './world.js?v=10';
+import { drawCar, drawSign, drawArrow, drawLizard, makeFamily } from './sprites.js?v=10';
+import { STOPS } from './stops.js?v=10';
+import { createScene } from './scenes.js?v=10';
+import { createTitle } from './title.js?v=10';
+import * as sound from './sound.js?v=10';
+import { hash2, pline } from './pixel.js?v=10';
+import { createCutscene, CUT_LENGTH } from './cutscene.js?v=10';
 
 const $ = (s) => document.querySelector(s);
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -72,7 +72,7 @@ function loadImage(name) {
     const img = new Image();
     img.onload = () => resolve((assets[name] = img));
     img.onerror = () => reject(new Error(`Could not load ${name}`));
-    img.src = `assets/img/${name}.png?v=9`;
+    img.src = `assets/img/${name}.png?v=10`;
   });
 }
 
@@ -215,7 +215,7 @@ function updateHud() {
   } else if (state.event) {
     el.go.textContent = 'Woof!';
     el.go.disabled = true;
-    setStatus('[Dog 2’s name] has spotted a lizard!');
+    setStatus('Rafiki has spotted a lizard!');
   } else if (state.travelling) {
     el.go.textContent = state.boost > 1 ? 'Hurrying…' : 'Speed up';
     el.go.disabled = state.boost > 1;
